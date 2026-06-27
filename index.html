@@ -1396,20 +1396,13 @@ async function handleAdd() {
   // 5. Plain name
   const listType = activeList().type;
 
-  // Snacks / custom — search Wikipedia for image
+  // Snacks / custom — try OFF → food fandom → Wikipedia
   if (listType !== "vtuber") {
-    setStatus("Searching Wikipedia for image…", "loading");
-    try {
-      const title = await searchWikipedia(input);
-      const img   = title ? await fetchWikipediaImage(title) : null;
-      addVtuber(input, img);
-      clearInput();
-      setStatus(img ? `Added "${input}" with Wikipedia image.` : `Added "${input}" (no image found).`, img ? "ok" : "error");
-    } catch(e) {
-      addVtuber(input, null);
-      clearInput();
-      setStatus(`Added "${input}" (image fetch failed).`, "error");
-    }
+    setStatus("Searching for image…", "loading");
+    const img = await fetchSnackImage(input);
+    addVtuber(input, img);
+    clearInput();
+    setStatus(img ? `Added "${input}" with image.` : `Added "${input}" (no image found).`, img ? "ok" : "error");
     btn.disabled = false;
     render();
     return;
@@ -1509,7 +1502,7 @@ async function handleAdd() {
   async function fetchSuggestions(query, signal) {
     const base = activeList().type === "vtuber"
       ? "https://virtualyoutuber.fandom.com/api.php"
-      : "https://en.wikipedia.org/w/api.php";
+      : "https://food.fandom.com/api.php";
     const params = new URLSearchParams({
       action: "opensearch", search: query, limit: "8",
       namespace: "0", format: "json", origin: "*",
@@ -2400,28 +2393,66 @@ function promptNewList() {
 }
 
 /* ── Wikipedia image fetch (for snacks) ── */
-async function fetchWikipediaImage(title) {
+/* ── Snack image sources (tried in order) ── */
+
+async function fetchOpenFoodFactsImage(query) {
   const params = new URLSearchParams({
-    action: "query", titles: title, prop: "pageimages",
-    format: "json", pithumbsize: "300", origin: "*",
+    search_terms: query, json: "1", page_size: "1", action: "process",
   });
-  const res = await fetch(`https://en.wikipedia.org/w/api.php?${params}`);
-  if (!res.ok) throw new Error("Wikipedia API " + res.status);
+  const res = await fetch(`https://world.openfoodfacts.org/cgi/search.pl?${params}`);
+  if (!res.ok) return null;
   const data = await res.json();
-  const pages = data.query?.pages;
-  if (!pages) return null;
-  return Object.values(pages)[0]?.thumbnail?.source || null;
+  const p = data.products?.[0];
+  return p?.image_front_url || p?.image_url || null;
 }
 
-async function searchWikipedia(query) {
-  const params = new URLSearchParams({
+async function fetchFoodFandomImage(query) {
+  const base = "https://food.fandom.com/api.php";
+  const search = new URLSearchParams({
     action: "opensearch", search: query, limit: "1",
     namespace: "0", format: "json", origin: "*",
   });
-  const res = await fetch(`https://en.wikipedia.org/w/api.php?${params}`);
-  if (!res.ok) return null;
-  const data = await res.json();
-  return (data[1] && data[1].length > 0) ? data[1][0] : null;
+  const sres = await fetch(`${base}?${search}`);
+  if (!sres.ok) return null;
+  const sdata = await sres.json();
+  const title = sdata[1]?.[0];
+  if (!title) return null;
+  const img = new URLSearchParams({
+    action: "query", titles: title, prop: "pageimages",
+    format: "json", pithumbsize: "300", origin: "*",
+  });
+  const ires = await fetch(`${base}?${img}`);
+  if (!ires.ok) return null;
+  const idata = await ires.json();
+  return Object.values(idata.query?.pages || {})[0]?.thumbnail?.source || null;
+}
+
+async function fetchWikipediaImage(query) {
+  const base = "https://en.wikipedia.org/w/api.php";
+  const search = new URLSearchParams({
+    action: "opensearch", search: query, limit: "1",
+    namespace: "0", format: "json", origin: "*",
+  });
+  const sres = await fetch(`${base}?${search}`);
+  if (!sres.ok) return null;
+  const sdata = await sres.json();
+  const title = sdata[1]?.[0];
+  if (!title) return null;
+  const img = new URLSearchParams({
+    action: "query", titles: title, prop: "pageimages",
+    format: "json", pithumbsize: "300", origin: "*",
+  });
+  const ires = await fetch(`${base}?${img}`);
+  if (!ires.ok) return null;
+  const idata = await ires.json();
+  return Object.values(idata.query?.pages || {})[0]?.thumbnail?.source || null;
+}
+
+async function fetchSnackImage(name) {
+  try { const img = await fetchOpenFoodFactsImage(name); if (img) return img; } catch(e) {}
+  try { const img = await fetchFoodFandomImage(name);    if (img) return img; } catch(e) {}
+  try { const img = await fetchWikipediaImage(name);     if (img) return img; } catch(e) {}
+  return null;
 }
 
 async function loadSnackImages() {
@@ -2429,14 +2460,8 @@ async function loadSnackImages() {
   pool.innerHTML = '<span class="pool-empty">Fetching snack images…</span>';
   const results = await Promise.allSettled(
     SNACK_DEFAULTS.map(async snk => {
-      try {
-        const title = await searchWikipedia(snk.name);
-        if (title) {
-          const img = await fetchWikipediaImage(title);
-          return { id: snk.id, name: snk.name, img };
-        }
-      } catch(e) {}
-      return { id: snk.id, name: snk.name, img: null };
+      const img = await fetchSnackImage(snk.name);
+      return { id: snk.id, name: snk.name, img };
     })
   );
   state.unranked = results.map((r, i) =>
