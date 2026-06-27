@@ -892,7 +892,7 @@
       <span id="local-img-name"></span>
       <button class="clear-btn" onclick="clearLocalImg()" title="Remove">×</button>
     </div>
-    <p class="hint">
+    <p class="hint" id="hint-vtuber">
       Type a name to add a VTuber — the wiki is searched first, then Twitch and Twitter as fallbacks, with initials if nothing is found.<br>
       Or paste a URL directly: <code>virtualyoutuber.fandom.com/wiki/…</code> fetches from the wiki; <code>twitch.tv/…</code> or <code>twitter.com/…</code> fetches the profile avatar.
     </p>
@@ -1502,7 +1502,7 @@ async function handleAdd() {
   async function fetchSuggestions(query, signal) {
     const base = activeList().type === "vtuber"
       ? "https://virtualyoutuber.fandom.com/api.php"
-      : "https://food.fandom.com/api.php";
+      : "https://en.wikipedia.org/w/api.php";
     const params = new URLSearchParams({
       action: "opensearch", search: query, limit: "8",
       namespace: "0", format: "json", origin: "*",
@@ -2357,6 +2357,8 @@ function updateListUI() {
   document.getElementById("add-btn").textContent = cfg.addLabel;
   document.getElementById("add-input").placeholder = cfg.addPlaceholder;
   document.title = list.name;
+  const vtHint = document.getElementById("hint-vtuber");
+  if (vtHint) vtHint.style.display = list.type === "vtuber" ? "" : "none";
 }
 
 function switchList(id) {
@@ -2449,10 +2451,18 @@ async function fetchWikipediaImage(query) {
 }
 
 async function fetchSnackImage(name) {
-  try { const img = await fetchOpenFoodFactsImage(name); if (img) return img; } catch(e) {}
-  try { const img = await fetchFoodFandomImage(name);    if (img) return img; } catch(e) {}
-  try { const img = await fetchWikipediaImage(name);     if (img) return img; } catch(e) {}
-  return null;
+  // Race all three sources; resolve with the first non-null result
+  return new Promise(resolve => {
+    let done = false;
+    let pending = 3;
+    const tryResolve = img => {
+      if (img && !done) { done = true; resolve(img); return; }
+      if (--pending === 0 && !done) resolve(null);
+    };
+    fetchOpenFoodFactsImage(name).then(tryResolve).catch(() => tryResolve(null));
+    fetchFoodFandomImage(name).then(tryResolve).catch(() => tryResolve(null));
+    fetchWikipediaImage(name).then(tryResolve).catch(() => tryResolve(null));
+  });
 }
 
 async function loadSnackImages() {
