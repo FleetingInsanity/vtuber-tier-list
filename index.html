@@ -163,29 +163,7 @@
       font-size: 0.6rem;
       opacity: 0.7;
     }
-    .tier-drag-handle {
-      display: none;
-      align-items: center;
-      justify-content: center;
-      width: 18px;
-      min-width: 18px;
-      background: transparent;
-      border: none;
-      color: var(--text-muted);
-      font-size: 0.85rem;
-      cursor: grab;
-      padding: 0;
-      flex-shrink: 0;
-      opacity: 0.5;
-      transition: opacity 0.15s;
-      user-select: none;
-    }
-    .tier-drag-handle:active { cursor: grabbing; }
-    .tier-drag-handle:hover { opacity: 1; }
-    .tier-row:hover .tier-drag-handle { display: flex; }
-    .tier-row.tier-drop-above { border-top: 3px solid var(--accent); }
-    .tier-row.tier-drop-below { border-bottom: 3px solid var(--accent); }
-    .tier-remove-btn {
+.tier-remove-btn {
       display: none;
       align-items: center;
       justify-content: center;
@@ -259,6 +237,24 @@
     }
     .tier-swatch:hover { transform: scale(1.2); }
     .tier-swatch.active { border-color: #fff; }
+    .tier-position-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    #tier-position-select {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 0.8rem;
+      padding: 4px 6px;
+      cursor: pointer;
+    }
+    #tier-position-select:focus { outline: 1px solid var(--accent); }
     .tier-editor-done {
       background: var(--accent);
       color: #fff;
@@ -710,6 +706,10 @@
 
 <div id="tier-editor">
   <input id="tier-label-input" type="text" maxlength="8" placeholder="Label">
+  <div class="tier-position-row">
+    <span>Position</span>
+    <select id="tier-position-select"></select>
+  </div>
   <div class="tier-swatches" id="tier-swatches"></div>
   <button class="tier-editor-done" onclick="closeTierEditor()">Done</button>
 </div>
@@ -963,8 +963,6 @@ let compareMode  = false;
 let dragging = null;
 let dragOccurred = false;
 let insertionTarget = null;
-let draggingTier = null;
-let tierDragOver = null;
 
 function clearInsertIndicators() {
   document.querySelectorAll(".drop-before, .drop-after")
@@ -1538,66 +1536,6 @@ function render() {
     removeBtn.textContent = "×";
     removeBtn.addEventListener("click", () => removeTier(t.id));
 
-    const dragHandle = document.createElement("div");
-    dragHandle.className = "tier-drag-handle";
-    dragHandle.title = "Drag to reorder tier";
-    dragHandle.textContent = "⠿";
-    dragHandle.draggable = true;
-    const tierIndex = state.tierDefs.indexOf(t);
-    dragHandle.addEventListener("dragstart", e => {
-      draggingTier = tierIndex;
-      e.dataTransfer.effectAllowed = "move";
-      setTimeout(() => row.style.opacity = "0.5", 0);
-    });
-    dragHandle.addEventListener("dragend", () => {
-      draggingTier = null;
-      tierDragOver = null;
-      row.style.opacity = "";
-      document.querySelectorAll(".tier-drop-above, .tier-drop-below")
-        .forEach(el => el.classList.remove("tier-drop-above", "tier-drop-below"));
-    });
-    row.addEventListener("dragover", e => {
-      if (draggingTier === null) return;
-      e.preventDefault();
-      e.stopPropagation();
-      const rect = row.getBoundingClientRect();
-      const mid = rect.top + rect.height / 2;
-      document.querySelectorAll(".tier-drop-above, .tier-drop-below")
-        .forEach(el => el.classList.remove("tier-drop-above", "tier-drop-below"));
-      if (e.clientY < mid) {
-        row.classList.add("tier-drop-above");
-        tierDragOver = { index: tierIndex, position: "above" };
-      } else {
-        row.classList.add("tier-drop-below");
-        tierDragOver = { index: tierIndex, position: "below" };
-      }
-    });
-    row.addEventListener("dragleave", e => {
-      if (!row.contains(e.relatedTarget)) {
-        row.classList.remove("tier-drop-above", "tier-drop-below");
-      }
-    });
-    row.addEventListener("drop", e => {
-      if (draggingTier === null || !tierDragOver) return;
-      e.preventDefault();
-      e.stopPropagation();
-      row.classList.remove("tier-drop-above", "tier-drop-below");
-      const fromIdx = draggingTier;
-      let toIdx = tierDragOver.index;
-      if (fromIdx === toIdx) return;
-      const moved = state.tierDefs.splice(fromIdx, 1)[0];
-      if (tierDragOver.position === "above") {
-        const adjustedTo = toIdx > fromIdx ? toIdx - 1 : toIdx;
-        state.tierDefs.splice(adjustedTo, 0, moved);
-      } else {
-        const adjustedTo = toIdx > fromIdx ? toIdx : toIdx + 1;
-        state.tierDefs.splice(adjustedTo, 0, moved);
-      }
-      save();
-      render();
-    });
-
-    row.appendChild(dragHandle);
     row.appendChild(label);
     row.appendChild(cards);
     row.appendChild(removeBtn);
@@ -1819,6 +1757,29 @@ function openTierEditor(id, labelEl) {
   const editor = document.getElementById("tier-editor");
   const input  = document.getElementById("tier-label-input");
   input.value  = def.label;
+
+  const posSelect = document.getElementById("tier-position-select");
+  posSelect.innerHTML = "";
+  const currentIdx = state.tierDefs.findIndex(t => t.id === id);
+  state.tierDefs.forEach((t, i) => {
+    const opt = document.createElement("option");
+    opt.value = i;
+    opt.textContent = `${i + 1}`;
+    if (i === currentIdx) opt.selected = true;
+    posSelect.appendChild(opt);
+  });
+  posSelect.onchange = () => {
+    const toIdx = parseInt(posSelect.value);
+    const fromIdx = state.tierDefs.findIndex(t => t.id === editingTierId);
+    if (toIdx === fromIdx) return;
+    const [moved] = state.tierDefs.splice(fromIdx, 1);
+    state.tierDefs.splice(toIdx, 0, moved);
+    save();
+    render();
+    // Re-open editor at the same label after re-render
+    const newLabel = document.querySelectorAll(".tier-label")[toIdx];
+    if (newLabel) openTierEditor(editingTierId, newLabel);
+  };
 
   const swatches = document.getElementById("tier-swatches");
   swatches.innerHTML = "";
