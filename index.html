@@ -358,6 +358,62 @@
     .vt-card:hover .vt-remove { display: flex; }
 
     /* ── Unranked pool ── */
+    /* ── Search bar ── */
+    #search-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 1.5rem 8px;
+      border-top: 0.5px solid var(--border);
+    }
+    #search-input {
+      flex: 1;
+      max-width: 320px;
+      background: var(--bg2);
+      border: 0.5px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.82rem;
+      padding: 6px 10px 6px 30px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    #search-input:focus { border-color: var(--accent); }
+    #search-input::placeholder { color: var(--text-muted); }
+    .search-icon-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .search-icon-wrap::before {
+      content: "⌕";
+      position: absolute;
+      left: 9px;
+      font-size: 1rem;
+      color: var(--text-muted);
+      pointer-events: none;
+      line-height: 1;
+    }
+    #search-clear {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 1rem;
+      cursor: pointer;
+      padding: 0 4px;
+      display: none;
+      line-height: 1;
+    }
+    #search-clear:hover { color: var(--text); background: none; }
+    #search-match-info {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+    .vt-card.search-dim {
+      opacity: 0.15;
+      pointer-events: none;
+    }
     .section-label {
       font-size: 0.75rem;
       font-weight: 600;
@@ -689,6 +745,13 @@
     </div>
     <span id="count-badge">0 / 0 ranked</span>
   </header>
+  <div id="search-bar">
+    <div class="search-icon-wrap">
+      <input type="text" id="search-input" placeholder="Search ranked & unranked…" autocomplete="off" />
+    </div>
+    <button id="search-clear" title="Clear search">×</button>
+    <span id="search-match-info"></span>
+  </div>
 </div>
 
 <div id="tiers"></div>
@@ -1547,6 +1610,8 @@ function render() {
   addBtn.addEventListener("click", addTier);
   tiersEl.appendChild(addBtn);
 
+  const searchQ = (document.getElementById("search-input")?.value || "").trim().toLowerCase();
+
   const pool = document.getElementById("unranked");
   pool.innerHTML = "";
   let unrankedList = activeState.unranked || [];
@@ -1571,6 +1636,22 @@ function render() {
   const total  = Object.values(activeState.tiers).flat().length + unrankedList.length;
   const ranked = Object.values(activeState.tiers).flat().length;
   document.getElementById("count-badge").textContent = `${ranked} / ${total} ranked`;
+
+  if (searchQ) {
+    let firstMatch = null;
+    let matchCount = 0;
+    document.querySelectorAll(".vt-card:not(.vt-card-ghost)").forEach(c => {
+      const name = c.dataset.vtname || "";
+      if (name.includes(searchQ)) {
+        matchCount++;
+        if (!firstMatch) firstMatch = c;
+      } else {
+        c.classList.add("search-dim");
+      }
+    });
+    const info = document.getElementById("search-match-info");
+    if (info) info.textContent = matchCount === 0 ? "No matches" : `${matchCount} match${matchCount > 1 ? "es" : ""}`;
+  }
 }
 
 /* ── Move to tier ── */
@@ -1645,6 +1726,57 @@ document.addEventListener("keydown", e => {
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("tier-label-input")?.addEventListener("keydown", e => {
     if (e.key === "Enter") { e.preventDefault(); closeTierEditor(); }
+  });
+
+  const searchInput = document.getElementById("search-input");
+  const searchClear = document.getElementById("search-clear");
+  const matchInfo   = document.getElementById("search-match-info");
+
+  function applySearch(query) {
+    const q = query.trim().toLowerCase();
+    searchClear.style.display = q ? "block" : "none";
+
+    const cards = [...document.querySelectorAll(".vt-card:not(.vt-card-ghost)")];
+    if (!q) {
+      cards.forEach(c => c.classList.remove("search-dim"));
+      matchInfo.textContent = "";
+      return;
+    }
+
+    let firstMatch = null;
+    let matchCount = 0;
+    cards.forEach(c => {
+      const name = c.dataset.vtname || "";
+      if (name.includes(q)) {
+        c.classList.remove("search-dim");
+        matchCount++;
+        if (!firstMatch) firstMatch = c;
+      } else {
+        c.classList.add("search-dim");
+      }
+    });
+
+    matchInfo.textContent = matchCount === 0 ? "No matches" : `${matchCount} match${matchCount > 1 ? "es" : ""}`;
+
+    if (firstMatch) {
+      firstMatch.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }
+
+  searchInput.addEventListener("input", e => applySearch(e.target.value));
+
+  searchInput.addEventListener("keydown", e => {
+    if (e.key === "Escape") {
+      searchInput.value = "";
+      applySearch("");
+      searchInput.blur();
+    }
+  });
+
+  searchClear.addEventListener("click", () => {
+    searchInput.value = "";
+    applySearch("");
+    searchInput.focus();
   });
 });
 
