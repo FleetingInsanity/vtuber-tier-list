@@ -14,13 +14,15 @@
       --bg3:       #0f3460;
       --surface:   #1e2a45;
       --border:    rgba(255,255,255,0.08);
-      --text:      #e0e0f0;
-      --text-muted:#8888aa;
+      --text:      #f0f0ff;
+      --text-muted:#a0a0c8;
       --accent:    #7f77dd;
       --radius:    10px;
       --card-size: 120px;
       --avatar:    112px;
     }
+
+    html { font-size: 17px; }
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -449,7 +451,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 64px;
+      width: 130px;
       height: 22px;
       margin: 0 auto;
       background: var(--surface);
@@ -458,14 +460,16 @@
       border-radius: 8px 8px 0 0;
       cursor: pointer;
       color: var(--text-muted);
-      font-size: 0.7rem;
-      gap: 4px;
+      font-size: 0.65rem;
+      font-weight: 500;
+      gap: 5px;
       transition: color 0.15s;
       position: relative;
       top: 1px;
+      letter-spacing: 0.03em;
     }
     .panel-toggle:hover { color: var(--text); background: var(--surface); }
-    .panel-toggle .chevron { transition: transform 0.25s ease; display: inline-block; }
+    .panel-toggle .chevron { transition: transform 0.25s ease; display: inline-block; font-size: 0.5rem; }
     .add-panel.collapsed .panel-toggle .chevron { transform: rotate(180deg); }
     .panel-body {
       padding: 14px 1.5rem;
@@ -775,9 +779,9 @@
 <p class="section-label">Unranked</p>
 <div id="unranked"><span class="pool-empty">Drag VTubers here to unrank them</span></div>
 
-<div class="add-panel collapsed" id="add-panel">
+<div class="add-panel" id="add-panel">
   <button class="panel-toggle" id="panel-toggle" onclick="togglePanel()" title="Show/hide options">
-    <span class="chevron">▲</span>
+    <span class="chevron">▲</span> Show / Hide Options
   </button>
   <div class="panel-body">
     <div class="add-row">
@@ -984,6 +988,19 @@ let compareMode  = false;
 let dragging = null;
 let dragOccurred = false;
 let insertionTarget = null;
+const undoStack = [];
+
+function pushUndo() {
+  undoStack.push(JSON.stringify(state));
+  if (undoStack.length > 30) undoStack.shift();
+}
+
+function undo() {
+  if (!undoStack.length) return;
+  state = JSON.parse(undoStack.pop());
+  save();
+  render();
+}
 
 function clearInsertIndicators() {
   document.querySelectorAll(".drop-before, .drop-after")
@@ -1404,6 +1421,7 @@ function attachDZ(el, dest) {
 /* ── Drop logic ── */
 function drop(dest, insertIndex = null) {
   if (!dragging) return;
+  pushUndo();
   const vt = dragging;
   const destArr = dest === "unranked" ? state.unranked : (state.tiers[dest] || []);
   const currentIdx = destArr.findIndex(v => v.id === vt.id);
@@ -1423,6 +1441,7 @@ function drop(dest, insertIndex = null) {
 
 /* ── Remove ── */
 function removeVt(id) {
+  pushUndo();
   state.tierDefs.forEach(t => { state.tiers[t.id] = (state.tiers[t.id] || []).filter(v => v.id !== id); });
   state.unranked = state.unranked.filter(v => v.id !== id);
   save();
@@ -1614,6 +1633,7 @@ function render() {
 
 /* ── Move to tier ── */
 function moveTo(vt, dest) {
+  pushUndo();
   state.tierDefs.forEach(t => { state.tiers[t.id] = (state.tiers[t.id] || []).filter(v => v.id !== vt.id); });
   state.unranked = state.unranked.filter(v => v.id !== vt.id);
   if (dest === "unranked") {
@@ -1671,6 +1691,14 @@ function hideContextMenu() {
 
 document.addEventListener("click", hideContextMenu);
 document.addEventListener("keydown", e => { if (e.key === "Escape") hideContextMenu(); });
+
+document.addEventListener("keydown", e => {
+  if (e.key === "z" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+    const active = document.activeElement;
+    const isInput = active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA");
+    if (!isInput) { e.preventDefault(); undo(); }
+  }
+});
 
 document.addEventListener("click", e => {
   const editor = document.getElementById("tier-editor");
@@ -1856,6 +1884,7 @@ function removeTier(id) {
     ? `Remove this tier? Its ${vts.length} VTuber(s) will move to unranked.`
     : "Remove this tier?";
   if (!confirm(msg)) return;
+  pushUndo();
   state.unranked = [...vts, ...state.unranked];
   delete state.tiers[id];
   state.tierDefs = state.tierDefs.filter(t => t.id !== id);
