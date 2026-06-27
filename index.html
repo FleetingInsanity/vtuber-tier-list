@@ -151,7 +151,103 @@
       font-weight: 700;
       flex-shrink: 0;
       letter-spacing: -1px;
+      cursor: pointer;
+      user-select: none;
+      position: relative;
     }
+    .tier-label:hover::after {
+      content: "✎";
+      position: absolute;
+      bottom: 3px;
+      right: 4px;
+      font-size: 0.6rem;
+      opacity: 0.7;
+    }
+    .tier-remove-btn {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      min-width: 26px;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 1rem;
+      cursor: pointer;
+      padding: 0;
+      flex-shrink: 0;
+      transition: color 0.15s;
+    }
+    .tier-remove-btn:hover { color: #e74c3c; }
+    .tier-row:hover .tier-remove-btn { display: flex; }
+    .add-tier-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 4px;
+      padding: 7px 14px;
+      background: transparent;
+      border: 1px dashed var(--border);
+      border-radius: var(--radius);
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+      width: 100%;
+    }
+    .add-tier-btn:hover { border-color: var(--accent); color: var(--accent); }
+    #tier-editor {
+      position: fixed;
+      z-index: 1001;
+      background: var(--bg2);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      padding: 12px;
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      min-width: 180px;
+    }
+    #tier-editor.open { display: flex; }
+    #tier-label-input {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 1.1rem;
+      font-weight: 700;
+      padding: 4px 8px;
+      width: 100%;
+      text-align: center;
+    }
+    #tier-label-input:focus { outline: 1px solid var(--accent); }
+    .tier-swatches {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 5px;
+    }
+    .tier-swatch {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: border-color 0.1s, transform 0.1s;
+    }
+    .tier-swatch:hover { transform: scale(1.2); }
+    .tier-swatch.active { border-color: #fff; }
+    .tier-editor-done {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 5px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+    .tier-editor-done:hover { opacity: 0.85; }
     .tier-cards {
       display: flex;
       flex-wrap: wrap;
@@ -171,14 +267,7 @@
     .vt-card.drop-before { box-shadow: -3px 0 0 0 var(--accent); }
     .vt-card.drop-after  { box-shadow:  3px 0 0 0 var(--accent); }
 
-    /* ── Tier colours ── */
-    .tier-S .tier-label { background:#c0392b; color:#fff; }
-    .tier-A .tier-label { background:#e67e22; color:#fff; }
-    .tier-B .tier-label { background:#d4ac0d; color:#1a1a1a; }
-    .tier-C .tier-label { background:#27ae60; color:#fff; }
-    .tier-D .tier-label { background:#2980b9; color:#fff; }
-    .tier-E .tier-label { background:#8e44ad; color:#fff; }
-    .tier-F .tier-label { background:#7f8c8d; color:#fff; }
+    /* ── Tier colours set via inline style from state.tierDefs ── */
 
     /* ── VTuber cards ── */
     .vt-card {
@@ -541,6 +630,12 @@
   <div class="ctx-list"></div>
 </div>
 
+<div id="tier-editor">
+  <input id="tier-label-input" type="text" maxlength="8" placeholder="Label">
+  <div class="tier-swatches" id="tier-swatches"></div>
+  <button class="tier-editor-done" onclick="closeTierEditor()">Done</button>
+</div>
+
 <div id="save-reminder">
   <div class="save-reminder-box">
     <h3>Back up your list first?</h3>
@@ -747,20 +842,37 @@ const DEFAULTS = [
   { id: "aqua",           name: "Minato Aqua" },
 ];
 
-const TIER_COLORS = {
-  S: { bg:"#c0392b", color:"#fff" },
-  A: { bg:"#e67e22", color:"#fff" },
-  B: { bg:"#d4ac0d", color:"#1a1a1a" },
-  C: { bg:"#27ae60", color:"#fff" },
-  D: { bg:"#2980b9", color:"#fff" },
-  E: { bg:"#8e44ad", color:"#fff" },
-  F: { bg:"#7f8c8d", color:"#fff" },
-};
+const DEFAULT_TIER_DEFS = [
+  { id:"S", label:"S", bg:"#c0392b", color:"#fff" },
+  { id:"A", label:"A", bg:"#e67e22", color:"#fff" },
+  { id:"B", label:"B", bg:"#d4ac0d", color:"#1a1a1a" },
+  { id:"C", label:"C", bg:"#27ae60", color:"#fff" },
+  { id:"D", label:"D", bg:"#2980b9", color:"#fff" },
+  { id:"E", label:"E", bg:"#8e44ad", color:"#fff" },
+  { id:"F", label:"F", bg:"#7f8c8d", color:"#fff" },
+];
 
-const TIER_RANK = { S:0, A:1, B:2, C:3, D:4, E:5, F:6, unranked:7 };
+const COLOR_PRESETS = [
+  { bg:"#c0392b", color:"#fff" }, { bg:"#e67e22", color:"#fff" },
+  { bg:"#f1c40f", color:"#1a1a1a" }, { bg:"#27ae60", color:"#fff" },
+  { bg:"#2980b9", color:"#fff" }, { bg:"#8e44ad", color:"#fff" },
+  { bg:"#7f8c8d", color:"#fff" }, { bg:"#e91e63", color:"#fff" },
+  { bg:"#009688", color:"#fff" }, { bg:"#ff5722", color:"#fff" },
+  { bg:"#1abc9c", color:"#fff" }, { bg:"#34495e", color:"#fff" },
+];
+
+function getTierRank(tierId) {
+  if (tierId === "unranked") return state.tierDefs.length;
+  const idx = state.tierDefs.findIndex(t => t.id === tierId);
+  return idx === -1 ? state.tierDefs.length : idx;
+}
 
 /* ── State ── */
-let state = { tiers: { S:[], A:[], B:[], C:[], D:[], E:[], F:[] }, unranked: [] };
+let state = {
+  tiers: { S:[], A:[], B:[], C:[], D:[], E:[], F:[] },
+  tierDefs: DEFAULT_TIER_DEFS.map(t => ({...t})),
+  unranked: [],
+};
 let compareState = null;
 let compareMode  = false;
 let dragging = null;
@@ -780,7 +892,10 @@ function save() {
 function load() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) state = JSON.parse(raw);
+    if (raw) {
+      state = JSON.parse(raw);
+      if (!state.tierDefs) state.tierDefs = DEFAULT_TIER_DEFS.map(t => ({...t}));
+    }
   } catch(e) {}
 }
 
@@ -1186,7 +1301,7 @@ function drop(dest, insertIndex = null) {
   const vt = dragging;
   const destArr = dest === "unranked" ? state.unranked : (state.tiers[dest] || []);
   const currentIdx = destArr.findIndex(v => v.id === vt.id);
-  TIERS.forEach(t => { state.tiers[t.id] = state.tiers[t.id].filter(v => v.id !== vt.id); });
+  state.tierDefs.forEach(t => { state.tiers[t.id] = (state.tiers[t.id] || []).filter(v => v.id !== vt.id); });
   state.unranked = state.unranked.filter(v => v.id !== vt.id);
   let idx = insertIndex;
   if (idx !== null && currentIdx !== -1 && currentIdx < idx) idx--;
@@ -1202,7 +1317,7 @@ function drop(dest, insertIndex = null) {
 
 /* ── Remove ── */
 function removeVt(id) {
-  TIERS.forEach(t => { state.tiers[t.id] = state.tiers[t.id].filter(v => v.id !== id); });
+  state.tierDefs.forEach(t => { state.tiers[t.id] = (state.tiers[t.id] || []).filter(v => v.id !== id); });
   state.unranked = state.unranked.filter(v => v.id !== id);
   save();
   render();
@@ -1250,7 +1365,7 @@ async function loadDefaultImages() {
 /* ── Reset ── */
 function resetAll() {
   if (!confirm("Reset the tier list to defaults? This cannot be undone.")) return;
-  state = { tiers: { S:[], A:[], B:[], C:[], D:[], E:[], F:[] }, unranked: [] };
+  state = { tiers: { S:[], A:[], B:[], C:[], D:[], E:[], F:[] }, tierDefs: DEFAULT_TIER_DEFS.map(t => ({...t})), unranked: [] };
   save();
   render();
   setStatus("", "");
@@ -1263,8 +1378,8 @@ function getCompareInfo(vt, currentTierId, refState) {
   if (currentTierId === "unranked") return null;
   const otherTier = findTierByName(vt.name, refState);
   if (otherTier === null || otherTier === "unranked") return null;
-  const currentRank = TIER_RANK[currentTierId] ?? 7;
-  const otherRank   = TIER_RANK[otherTier] ?? 7;
+  const currentRank = getTierRank(currentTierId);
+  const otherRank   = getTierRank(otherTier);
   const delta = otherRank - currentRank;
   return delta !== 0 ? { otherTier, delta } : null;
 }
@@ -1280,7 +1395,7 @@ function render() {
   const activeNames    = new Set();
   const activeTierByName = new Map();
   if (refState) {
-    TIERS.forEach(t => (activeState.tiers[t.id] || []).forEach(v => {
+    state.tierDefs.forEach(t => (activeState.tiers[t.id] || []).forEach(v => {
       const n = v.name.toLowerCase().trim();
       activeNames.add(n);
       activeTierByName.set(n, t.id);
@@ -1292,13 +1407,17 @@ function render() {
     });
   }
 
-  TIERS.forEach(t => {
+  state.tierDefs.forEach(t => {
     const row = document.createElement("div");
-    row.className = `tier-row tier-${t.id}`;
+    row.className = "tier-row";
 
     const label = document.createElement("div");
     label.className = "tier-label";
     label.textContent = t.label;
+    label.style.background = t.bg;
+    label.style.color = t.color;
+    label.title = "Click to edit label and colour";
+    label.addEventListener("click", () => openTierEditor(t.id, label));
 
     const cards = document.createElement("div");
     cards.className = "tier-cards";
@@ -1306,11 +1425,10 @@ function render() {
     (activeState.tiers[t.id] || []).forEach(vt => {
       cards.appendChild(makeCard(vt, getCompareInfo(vt, t.id, refState)));
     });
-    // Ghost cards: refState entries placed in this tier but not already shown here normally
     if (refState) {
       (refState.tiers[t.id] || []).forEach(vt => {
         const n = vt.name.toLowerCase().trim();
-        if (activeTierByName.get(n) === t.id) return; // same tier in both — skip
+        if (activeTierByName.get(n) === t.id) return;
         const exclusive = !activeNames.has(n);
         const tid = t.id;
         let addCb = null;
@@ -1327,10 +1445,23 @@ function render() {
     }
     attachDZ(cards, t.id);
 
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "tier-remove-btn";
+    removeBtn.title = "Remove tier (moves VTubers to unranked)";
+    removeBtn.textContent = "×";
+    removeBtn.addEventListener("click", () => removeTier(t.id));
+
     row.appendChild(label);
     row.appendChild(cards);
+    row.appendChild(removeBtn);
     tiersEl.appendChild(row);
   });
+
+  const addBtn = document.createElement("button");
+  addBtn.className = "add-tier-btn";
+  addBtn.textContent = "+ Add Tier";
+  addBtn.addEventListener("click", addTier);
+  tiersEl.appendChild(addBtn);
 
   const pool = document.getElementById("unranked");
   pool.innerHTML = "";
@@ -1360,7 +1491,7 @@ function render() {
 
 /* ── Move to tier ── */
 function moveTo(vt, dest) {
-  TIERS.forEach(t => { state.tiers[t.id] = state.tiers[t.id].filter(v => v.id !== vt.id); });
+  state.tierDefs.forEach(t => { state.tiers[t.id] = (state.tiers[t.id] || []).filter(v => v.id !== vt.id); });
   state.unranked = state.unranked.filter(v => v.id !== vt.id);
   if (dest === "unranked") {
     state.unranked.push(vt);
@@ -1378,16 +1509,16 @@ function showContextMenu(vt, e) {
   const list = menu.querySelector(".ctx-list");
   list.innerHTML = "";
 
-  TIERS.forEach(t => {
+  state.tierDefs.forEach(t => {
     const opt = document.createElement("div");
     opt.className = "ctx-option";
     const badge = document.createElement("span");
     badge.className = "ctx-badge";
     badge.textContent = t.label;
-    badge.style.background = TIER_COLORS[t.id].bg;
-    badge.style.color = TIER_COLORS[t.id].color;
+    badge.style.background = t.bg;
+    badge.style.color = t.color;
     const label = document.createElement("span");
-    label.textContent = "Tier " + t.id;
+    label.textContent = t.label !== t.id ? `${t.label} (${t.id})` : "Tier " + t.id;
     opt.appendChild(badge);
     opt.appendChild(label);
     opt.addEventListener("click", ev => { ev.stopPropagation(); moveTo(vt, t.id); hideContextMenu(); });
@@ -1418,6 +1549,21 @@ function hideContextMenu() {
 document.addEventListener("click", hideContextMenu);
 document.addEventListener("keydown", e => { if (e.key === "Escape") hideContextMenu(); });
 
+document.addEventListener("click", e => {
+  const editor = document.getElementById("tier-editor");
+  if (editor && editor.classList.contains("open") && !editor.contains(e.target) && !e.target.closest(".tier-label")) {
+    closeTierEditor();
+  }
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") closeTierEditor();
+});
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("tier-label-input")?.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); closeTierEditor(); }
+  });
+});
+
 /* ── Export / Import JSON ── */
 function exportJSON() {
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
@@ -1447,6 +1593,76 @@ document.getElementById("import-json-input").addEventListener("change", e => {
   };
   reader.readAsText(file);
 });
+
+/* ── Tier editor ── */
+let editingTierId = null;
+
+function openTierEditor(id, labelEl) {
+  editingTierId = id;
+  const def = state.tierDefs.find(t => t.id === id);
+  const editor = document.getElementById("tier-editor");
+  const input  = document.getElementById("tier-label-input");
+  input.value  = def.label;
+
+  const swatches = document.getElementById("tier-swatches");
+  swatches.innerHTML = "";
+  COLOR_PRESETS.forEach(p => {
+    const sw = document.createElement("div");
+    sw.className = "tier-swatch" + (p.bg === def.bg ? " active" : "");
+    sw.style.background = p.bg;
+    sw.title = p.bg;
+    sw.addEventListener("click", () => setTierColor(p.bg, p.color));
+    swatches.appendChild(sw);
+  });
+
+  const rect = labelEl.getBoundingClientRect();
+  editor.style.left = Math.min(rect.right + 8, window.innerWidth - 210) + "px";
+  editor.style.top  = Math.max(rect.top, 8) + "px";
+  editor.classList.add("open");
+  input.focus();
+  input.select();
+}
+
+function closeTierEditor() {
+  if (!editingTierId) return;
+  const def = state.tierDefs.find(t => t.id === editingTierId);
+  if (def) {
+    const val = document.getElementById("tier-label-input").value.trim();
+    if (val) def.label = val;
+    save();
+    render();
+  }
+  editingTierId = null;
+  document.getElementById("tier-editor").classList.remove("open");
+}
+
+function setTierColor(bg, color) {
+  const def = state.tierDefs.find(t => t.id === editingTierId);
+  if (!def) return;
+  def.bg = bg; def.color = color;
+  save(); render();
+  document.querySelectorAll(".tier-swatch").forEach(sw => {
+    sw.classList.toggle("active", sw.style.background === bg || sw.title === bg);
+  });
+}
+
+function addTier() {
+  const id = "T" + Date.now();
+  const preset = COLOR_PRESETS[state.tierDefs.length % COLOR_PRESETS.length];
+  state.tierDefs.push({ id, label: "?", bg: preset.bg, color: preset.color });
+  state.tiers[id] = [];
+  save(); render();
+}
+
+function removeTier(id) {
+  const vts = state.tiers[id] || [];
+  if (vts.length && !confirm(`Remove this tier? Its ${vts.length} VTuber(s) will move to unranked.`)) return;
+  state.unranked = [...vts, ...state.unranked];
+  delete state.tiers[id];
+  state.tierDefs = state.tierDefs.filter(t => t.id !== id);
+  if (editingTierId === id) { editingTierId = null; document.getElementById("tier-editor").classList.remove("open"); }
+  save(); render();
+}
 
 /* ── Export ── */
 async function exportImage() {
@@ -1574,7 +1790,7 @@ function dismissTip() {
 /* ── Compare ── */
 function findTierByName(name, st) {
   const n = name.toLowerCase().trim();
-  for (const t of TIERS) {
+  for (const t of state.tierDefs) {
     if ((st.tiers[t.id] || []).some(v => v.name.toLowerCase().trim() === n)) return t.id;
   }
   if ((st.unranked || []).some(v => v.name.toLowerCase().trim() === n)) return "unranked";
@@ -1622,7 +1838,7 @@ document.getElementById("compare-input").addEventListener("change", function(e) 
 
 function findVtByName(name, st) {
   const n = name.toLowerCase().trim();
-  for (const t of TIERS) {
+  for (const t of state.tierDefs) {
     const found = (st.tiers[t.id] || []).find(v => v.name.toLowerCase().trim() === n);
     if (found) return found;
   }
