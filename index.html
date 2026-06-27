@@ -162,7 +162,7 @@
       font-size: 0.6rem;
       opacity: 0.7;
     }
-.tier-remove-btn {
+    .tier-remove-btn {
       display: none;
       align-items: center;
       justify-content: center;
@@ -1344,12 +1344,14 @@ async function handleAdd() {
     activeIdx = -1;
   }
 
-  async function fetchSuggestions(query) {
+  let currentAbort = null;
+
+  async function fetchSuggestions(query, signal) {
     const params = new URLSearchParams({
       action: "opensearch", search: query, limit: "8",
       namespace: "0", format: "json", origin: "*",
     });
-    const res = await fetch(`https://virtualyoutuber.fandom.com/api.php?${params}`);
+    const res = await fetch(`https://virtualyoutuber.fandom.com/api.php?${params}`, { signal });
     if (!res.ok) return [];
     const data = await res.json();
     return data[1] || [];
@@ -1358,14 +1360,19 @@ async function handleAdd() {
   input.addEventListener("input", () => {
     const val = input.value.trim();
     clearTimeout(debounceTimer);
+    if (currentAbort) { currentAbort.abort(); currentAbort = null; }
     if (!val || val.startsWith("http")) { closeSuggestions(); return; }
     box.innerHTML = '<div class="suggestion-loading">Searching wiki…</div>';
     box.classList.add("open");
     debounceTimer = setTimeout(async () => {
+      currentAbort = new AbortController();
       try {
-        const results = await fetchSuggestions(val);
+        const results = await fetchSuggestions(val, currentAbort.signal);
+        currentAbort = null;
         renderSuggestions(results);
-      } catch { closeSuggestions(); }
+      } catch (e) {
+        if (e.name !== "AbortError") closeSuggestions();
+      }
     }, 280);
   });
 
@@ -1940,16 +1947,17 @@ function openTierEditor(id, labelEl) {
     if (i === currentIdx) opt.selected = true;
     posSelect.appendChild(opt);
   });
+  const capturedId = id;
   posSelect.onchange = () => {
     const toIdx = parseInt(posSelect.value);
-    const fromIdx = state.tierDefs.findIndex(t => t.id === editingTierId);
+    const fromIdx = state.tierDefs.findIndex(t => t.id === capturedId);
     if (toIdx === fromIdx) return;
     const [moved] = state.tierDefs.splice(fromIdx, 1);
     state.tierDefs.splice(toIdx, 0, moved);
     save();
     render();
     const newLabel = document.querySelectorAll(".tier-label")[toIdx];
-    if (newLabel) openTierEditor(editingTierId, newLabel);
+    if (newLabel) openTierEditor(capturedId, newLabel);
   };
 
   const swatches = document.getElementById("tier-swatches");
