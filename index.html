@@ -44,14 +44,11 @@
       color: var(--text);
     }
     header h1 span { color: var(--accent); }
-    #count-badge {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      background: var(--surface);
-      border: 0.5px solid var(--border);
-      border-radius: 20px;
-      padding: 4px 12px;
-      justify-self: end;
+    .header-right {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 6px;
     }
 
     /* ── Compare switcher ── */
@@ -355,16 +352,8 @@
 
     /* ── Unranked pool ── */
     /* ── Search bar ── */
-    #search-bar {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 1.5rem 8px;
-      border-top: 0.5px solid var(--border);
-    }
     #search-input {
-      flex: 1;
-      max-width: 320px;
+      width: 200px;
       background: var(--bg2);
       border: 0.5px solid var(--border);
       border-radius: 8px;
@@ -448,10 +437,38 @@
       left: 0;
       right: 0;
       z-index: 100;
-      padding: 14px 1.5rem;
       background: var(--surface);
       border-top: 0.5px solid var(--border);
       box-shadow: 0 -2px 16px rgba(0,0,0,0.35);
+      transition: transform 0.25s ease;
+    }
+    .add-panel.collapsed {
+      transform: translateY(calc(100% - 32px));
+    }
+    .panel-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 64px;
+      height: 22px;
+      margin: 0 auto;
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-bottom: none;
+      border-radius: 8px 8px 0 0;
+      cursor: pointer;
+      color: var(--text-muted);
+      font-size: 0.7rem;
+      gap: 4px;
+      transition: color 0.15s;
+      position: relative;
+      top: 1px;
+    }
+    .panel-toggle:hover { color: var(--text); background: var(--surface); }
+    .panel-toggle .chevron { transition: transform 0.25s ease; display: inline-block; }
+    .add-panel.collapsed .panel-toggle .chevron { transform: rotate(180deg); }
+    .panel-body {
+      padding: 14px 1.5rem;
     }
     .add-row {
       display: flex;
@@ -743,15 +760,14 @@
       </div>
       <span class="sw-label" id="sw-right" onclick="setCompareMode(true)">Friend's List</span>
     </div>
-    <span id="count-badge">0 / 0 ranked</span>
-  </header>
-  <div id="search-bar">
-    <div class="search-icon-wrap">
-      <input type="text" id="search-input" placeholder="Search ranked & unranked…" autocomplete="off" />
+    <div class="header-right">
+      <div class="search-icon-wrap">
+        <input type="text" id="search-input" placeholder="Search…" autocomplete="off" />
+      </div>
+      <button id="search-clear" title="Clear search">×</button>
+      <span id="search-match-info"></span>
     </div>
-    <button id="search-clear" title="Clear search">×</button>
-    <span id="search-match-info"></span>
-  </div>
+  </header>
 </div>
 
 <div id="tiers"></div>
@@ -759,39 +775,44 @@
 <p class="section-label">Unranked</p>
 <div id="unranked"><span class="pool-empty">Drag VTubers here to unrank them</span></div>
 
-<div class="add-panel">
-  <div class="add-row">
-    <input type="text" id="add-input"
-      placeholder="Paste a fandom wiki URL or type a name…" />
-    <button class="primary" id="add-btn" onclick="handleAdd()">Add VTuber</button>
-    <button onclick="document.getElementById('local-img-input').click()">Local Image</button>
-    <button onclick="resetAll()">Reset</button>
-    <button onclick="exportJSON()">Export JSON</button>
-    <button onclick="document.getElementById('import-json-input').click()">Import JSON</button>
-    <button id="export-btn" onclick="exportImage()">Export Image</button>
-    <button id="compare-btn" onclick="handleCompareClick()">Compare</button>
+<div class="add-panel collapsed" id="add-panel">
+  <button class="panel-toggle" id="panel-toggle" onclick="togglePanel()" title="Show/hide options">
+    <span class="chevron">▲</span>
+  </button>
+  <div class="panel-body">
+    <div class="add-row">
+      <input type="text" id="add-input"
+        placeholder="Paste a fandom wiki URL or type a name…" />
+      <button class="primary" id="add-btn" onclick="handleAdd()">Add VTuber</button>
+      <button onclick="document.getElementById('local-img-input').click()">Local Image</button>
+      <button onclick="resetAll()">Reset</button>
+      <button onclick="exportJSON()">Export JSON</button>
+      <button onclick="document.getElementById('import-json-input').click()">Import JSON</button>
+      <button id="export-btn" onclick="exportImage()">Export Image</button>
+      <button id="compare-btn" onclick="handleCompareClick()">Compare</button>
+    </div>
+    <input type="file" id="local-img-input" accept="image/*" style="display:none">
+    <input type="file" id="import-json-input" accept=".json,application/json" style="display:none">
+    <input type="file" id="compare-input" accept=".json,application/json" style="display:none">
+    <div id="local-img-preview">
+      <img id="local-img-thumb" src="" alt="preview">
+      <span id="local-img-name"></span>
+      <button class="clear-btn" onclick="clearLocalImg()" title="Remove">×</button>
+    </div>
+    <p class="hint">
+      Type a name to add a VTuber — the wiki is searched first, then Twitch and Twitter as fallbacks, with initials if nothing is found.<br>
+      Or paste a URL directly: <code>virtualyoutuber.fandom.com/wiki/…</code> fetches from the wiki; <code>twitch.tv/…</code> or <code>twitter.com/…</code> fetches the profile avatar.
+    </p>
+    <p class="hint" style="margin-top:8px;">
+      <strong>Local Image</strong> — pick an image file from your device to use as the avatar instead of fetching online.<br>
+      <strong>Reset</strong> — clears all rankings and reloads the full default list with fresh avatars.<br>
+      <strong>Export JSON</strong> — saves your current rankings to a <code>.json</code> file you can back up or share.<br>
+      <strong>Import JSON</strong> — restores rankings from a previously exported <code>.json</code> file.<br>
+      <strong>Export Image</strong> — captures the tier rows as a PNG you can save or share.<br>
+      <strong>Compare</strong> — upload a friend's exported JSON to see how your rankings differ. Each card shows an arrow (↑/↓) and the number of tiers it moved, with the other list's tier in brackets. Toggle between your view and your friend's view using the button in the header.
+    </p>
+    <p id="status"></p>
   </div>
-  <input type="file" id="local-img-input" accept="image/*" style="display:none">
-  <input type="file" id="import-json-input" accept=".json,application/json" style="display:none">
-  <input type="file" id="compare-input" accept=".json,application/json" style="display:none">
-  <div id="local-img-preview">
-    <img id="local-img-thumb" src="" alt="preview">
-    <span id="local-img-name"></span>
-    <button class="clear-btn" onclick="clearLocalImg()" title="Remove">×</button>
-  </div>
-  <p class="hint">
-    Type a name to add a VTuber — the wiki is searched first, then Twitch and Twitter as fallbacks, with initials if nothing is found.<br>
-    Or paste a URL directly: <code>virtualyoutuber.fandom.com/wiki/…</code> fetches from the wiki; <code>twitch.tv/…</code> or <code>twitter.com/…</code> fetches the profile avatar.
-  </p>
-  <p class="hint" style="margin-top:8px;">
-    <strong>Local Image</strong> — pick an image file from your device to use as the avatar instead of fetching online.<br>
-    <strong>Reset</strong> — clears all rankings and reloads the full default list with fresh avatars.<br>
-    <strong>Export JSON</strong> — saves your current rankings to a <code>.json</code> file you can back up or share.<br>
-    <strong>Import JSON</strong> — restores rankings from a previously exported <code>.json</code> file.<br>
-    <strong>Export Image</strong> — captures the tier rows as a PNG you can save or share.<br>
-    <strong>Compare</strong> — upload a friend's exported JSON to see how your rankings differ. Each card shows an arrow (↑/↓) and the number of tiers it moved, with the other list's tier in brackets. Toggle between your view and your friend's view using the button in the header.
-  </p>
-  <p id="status"></p>
 </div>
 
 <footer>
@@ -1573,7 +1594,6 @@ function render() {
 
   const total  = Object.values(activeState.tiers).flat().length + unrankedList.length;
   const ranked = Object.values(activeState.tiers).flat().length;
-  document.getElementById("count-badge").textContent = `${ranked} / ${total} ranked`;
 
   if (searchQ) {
     let firstMatch = null;
@@ -1832,7 +1852,10 @@ function addTier() {
 
 function removeTier(id) {
   const vts = state.tiers[id] || [];
-  if (vts.length && !confirm(`Remove this tier? Its ${vts.length} VTuber(s) will move to unranked.`)) return;
+  const msg = vts.length
+    ? `Remove this tier? Its ${vts.length} VTuber(s) will move to unranked.`
+    : "Remove this tier?";
+  if (!confirm(msg)) return;
   state.unranked = [...vts, ...state.unranked];
   delete state.tiers[id];
   state.tierDefs = state.tierDefs.filter(t => t.id !== id);
@@ -1961,6 +1984,12 @@ function dismissTip() {
   document.getElementById("tip-bar").style.display = "none";
   updateTopPadding();
   try { localStorage.setItem("vtl_tip_dismissed", "1"); } catch(e) {}
+}
+
+function togglePanel() {
+  const panel = document.getElementById("add-panel");
+  panel.classList.toggle("collapsed");
+  updateBottomPadding();
 }
 
 /* ── Compare ── */
