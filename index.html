@@ -40,12 +40,59 @@
       padding: 10px 1.5rem;
       border-top: 0.5px solid var(--border);
     }
-    header h1 {
+
+    /* ── List picker ── */
+    #list-picker-wrap {
+      position: relative;
+    }
+    #list-picker-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: none;
+      border: none;
+      padding: 2px 4px;
+      border-radius: 6px;
+      cursor: pointer;
       font-size: 1.4rem;
       font-weight: 600;
       color: var(--text);
+      transition: background 0.15s;
     }
-    header h1 span { color: var(--accent); }
+    #list-picker-btn:hover { background: rgba(255,255,255,0.06); }
+    #list-picker-btn .lp-arrow { font-size: 0.75rem; color: var(--text-muted); transition: transform 0.2s; }
+    #list-picker-btn.open .lp-arrow { transform: rotate(180deg); }
+    #list-picker-btn .lp-accent { color: var(--accent); }
+    #list-picker-dropdown {
+      display: none;
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      min-width: 210px;
+      background: var(--bg2);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      z-index: 1002;
+      overflow: hidden;
+    }
+    #list-picker-dropdown.open { display: block; }
+    .lp-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 14px;
+      font-size: 0.82rem;
+      cursor: pointer;
+      color: var(--text);
+      transition: background 0.1s;
+    }
+    .lp-item:hover { background: var(--surface); }
+    .lp-item.active { color: var(--accent); font-weight: 600; }
+    .lp-item .lp-check { font-size: 0.7rem; width: 12px; }
+    .lp-item .lp-type { font-size: 0.68rem; color: var(--text-muted); margin-left: auto; }
+    .lp-divider { height: 0.5px; background: var(--border); margin: 4px 0; }
+    .lp-new { color: var(--accent); font-style: normal; }
     .header-right {
       display: flex;
       align-items: center;
@@ -789,7 +836,13 @@
     <button class="tip-dismiss" onclick="dismissTip()" title="Dismiss">×</button>
   </div>
   <header>
-    <h1>VTuber <span>Tier List</span></h1>
+    <div id="list-picker-wrap">
+      <button id="list-picker-btn" onclick="toggleListPicker()">
+        <span id="list-name-display">VTuber <span class="lp-accent">Tier List</span></span>
+        <span class="lp-arrow">▾</span>
+      </button>
+      <div id="list-picker-dropdown"></div>
+    </div>
     <div id="compare-switcher">
       <span class="sw-label" id="sw-left" onclick="setCompareMode(false)">My List</span>
       <div class="sw-track" onclick="toggleCompare()">
@@ -988,6 +1041,50 @@ const DEFAULTS = [
   { id: "aqua",           name: "Minato Aqua" },
 ];
 
+const SNACK_DEFAULTS = [
+  { id: "snk_snickers",    name: "Snickers" },
+  { id: "snk_kitkat",      name: "Kit Kat" },
+  { id: "snk_twix",        name: "Twix" },
+  { id: "snk_maltesers",   name: "Maltesers" },
+  { id: "snk_cadbury",     name: "Cadbury Dairy Milk" },
+  { id: "snk_doritos",     name: "Doritos" },
+  { id: "snk_pringles",    name: "Pringles" },
+  { id: "snk_walkers_rs",  name: "Walkers Crisps" },
+  { id: "snk_haribo",      name: "Haribo Goldbears" },
+  { id: "snk_oreo",        name: "Oreo" },
+  { id: "snk_skittles",    name: "Skittles" },
+  { id: "snk_reeses",      name: "Reese's Peanut Butter Cups" },
+  { id: "snk_mms",         name: "M&M's" },
+  { id: "snk_digestives",  name: "McVitie's Digestives" },
+  { id: "snk_jaffa",       name: "Jaffa Cakes" },
+  { id: "snk_hobnobs",     name: "HobNobs" },
+  { id: "snk_popcorn",     name: "Popcorn" },
+  { id: "snk_pretzel",     name: "Pretzel" },
+  { id: "snk_chipsahoy",   name: "Chips Ahoy" },
+  { id: "snk_bourbon",     name: "Bourbon Biscuit" },
+];
+
+const LIST_CONFIGS = {
+  vtuber: {
+    displayName: (n) => n === "VTuber Tier List" ? `VTuber <span class="lp-accent">Tier List</span>` : `${n} <span class="lp-accent">Tier List</span>`,
+    addLabel: "Add VTuber",
+    addPlaceholder: "Paste a fandom wiki URL or type a name…",
+    typeLabel: "VTubers",
+  },
+  snacks: {
+    displayName: (n) => `${n} <span class="lp-accent">Tier List</span>`,
+    addLabel: "Add Snack",
+    addPlaceholder: "Type a snack name…",
+    typeLabel: "Snacks",
+  },
+  custom: {
+    displayName: (n) => `${n} <span class="lp-accent">Tier List</span>`,
+    addLabel: "Add Item",
+    addPlaceholder: "Type an item name…",
+    typeLabel: "Custom",
+  },
+};
+
 const DEFAULT_TIER_DEFS = [
   { id:"S", label:"S", bg:"#c0392b", color:"#fff" },
   { id:"A", label:"A", bg:"#e67e22", color:"#fff" },
@@ -1043,19 +1140,60 @@ function clearInsertIndicators() {
     .forEach(el => el.classList.remove("drop-before", "drop-after"));
 }
 
-/* ── Persistence ── */
-const STORAGE_KEY = "vtl_obsidian_v1";
+/* ── Multi-list persistence ── */
+const LEGACY_KEY    = "vtl_obsidian_v1";
+const LISTS_IDX_KEY = "vtl_lists_v1";
+const ACTIVE_KEY    = "vtl_active_list";
+const stateKey = (id) => `vtl_state_${id}`;
+
+let lists = [];        // [{id, name, type}]
+let activeListId = "vtuber";
+
 function save() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e) {}
+  try { localStorage.setItem(stateKey(activeListId), JSON.stringify(state)); } catch(e) {}
 }
+
 function load() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(stateKey(activeListId));
     if (raw) {
       state = JSON.parse(raw);
       if (!state.tierDefs) state.tierDefs = DEFAULT_TIER_DEFS.map(t => ({...t}));
     }
   } catch(e) {}
+}
+
+function saveLists() {
+  try { localStorage.setItem(LISTS_IDX_KEY, JSON.stringify(lists)); } catch(e) {}
+}
+
+function activeList() { return lists.find(l => l.id === activeListId) || lists[0]; }
+
+function initLists() {
+  try {
+    const raw = localStorage.getItem(LISTS_IDX_KEY);
+    if (raw) {
+      lists = JSON.parse(raw);
+    } else {
+      lists = [
+        { id: "vtuber", name: "VTuber Tier List", type: "vtuber" },
+        { id: "snacks", name: "Snacks Tier List",  type: "snacks" },
+      ];
+      saveLists();
+      // Migrate legacy VTuber state
+      const legacy = localStorage.getItem(LEGACY_KEY);
+      if (legacy) {
+        try { localStorage.setItem(stateKey("vtuber"), legacy); } catch(e) {}
+      }
+    }
+  } catch(e) {
+    lists = [
+      { id: "vtuber", name: "VTuber Tier List", type: "vtuber" },
+      { id: "snacks", name: "Snacks Tier List",  type: "snacks" },
+    ];
+  }
+  const saved = localStorage.getItem(ACTIVE_KEY);
+  activeListId = (saved && lists.find(l => l.id === saved)) ? saved : lists[0].id;
 }
 
 /* ── URL parsers ── */
@@ -1255,7 +1393,29 @@ async function handleAdd() {
     return;
   }
 
-  // 5. Plain name — wiki search → unavatar twitch → unavatar twitter → initials
+  // 5. Plain name
+  const listType = activeList().type;
+
+  // Snacks / custom — search Wikipedia for image
+  if (listType !== "vtuber") {
+    setStatus("Searching Wikipedia for image…", "loading");
+    try {
+      const title = await searchWikipedia(input);
+      const img   = title ? await fetchWikipediaImage(title) : null;
+      addVtuber(input, img);
+      clearInput();
+      setStatus(img ? `Added "${input}" with Wikipedia image.` : `Added "${input}" (no image found).`, img ? "ok" : "error");
+    } catch(e) {
+      addVtuber(input, null);
+      clearInput();
+      setStatus(`Added "${input}" (image fetch failed).`, "error");
+    }
+    btn.disabled = false;
+    render();
+    return;
+  }
+
+  // VTuber — fandom wiki search → unavatar twitch → unavatar twitter → initials
   setStatus("Searching wiki…", "loading");
   try {
     const foundTitle = await searchWiki(input);
@@ -1347,11 +1507,14 @@ async function handleAdd() {
   let currentAbort = null;
 
   async function fetchSuggestions(query, signal) {
+    const base = activeList().type === "vtuber"
+      ? "https://virtualyoutuber.fandom.com/api.php"
+      : "https://en.wikipedia.org/w/api.php";
     const params = new URLSearchParams({
       action: "opensearch", search: query, limit: "8",
       namespace: "0", format: "json", origin: "*",
     });
-    const res = await fetch(`https://virtualyoutuber.fandom.com/api.php?${params}`, { signal });
+    const res = await fetch(`${base}?${params}`, { signal });
     if (!res.ok) return [];
     const data = await res.json();
     return data[1] || [];
@@ -1625,7 +1788,9 @@ function resetAll() {
   save();
   render();
   setStatus("", "");
-  loadDefaultImages();
+  const type = activeList().type;
+  if (type === "snacks") loadSnackImages();
+  else loadDefaultImages();
 }
 
 /* ── Render ── */
@@ -2153,6 +2318,134 @@ function togglePanel() {
   updateBottomPadding();
 }
 
+/* ── List picker ── */
+function toggleListPicker() {
+  const btn = document.getElementById("list-picker-btn");
+  const dd  = document.getElementById("list-picker-dropdown");
+  const isOpen = dd.classList.contains("open");
+  if (isOpen) { closeListPicker(); return; }
+  renderListPickerDropdown();
+  btn.classList.add("open");
+  dd.classList.add("open");
+}
+
+function closeListPicker() {
+  document.getElementById("list-picker-btn").classList.remove("open");
+  document.getElementById("list-picker-dropdown").classList.remove("open");
+}
+
+function renderListPickerDropdown() {
+  const dd = document.getElementById("list-picker-dropdown");
+  dd.innerHTML = "";
+  lists.forEach(l => {
+    const item = document.createElement("div");
+    item.className = "lp-item" + (l.id === activeListId ? " active" : "");
+    const cfg = LIST_CONFIGS[l.type] || LIST_CONFIGS.custom;
+    item.innerHTML = `<span class="lp-check">${l.id === activeListId ? "✓" : ""}</span>
+      <span>${l.name}</span>
+      <span class="lp-type">${cfg.typeLabel}</span>`;
+    item.addEventListener("click", () => switchList(l.id));
+    dd.appendChild(item);
+  });
+  const div = document.createElement("div");
+  div.className = "lp-divider";
+  dd.appendChild(div);
+  const newItem = document.createElement("div");
+  newItem.className = "lp-item lp-new";
+  newItem.innerHTML = `<span class="lp-check"></span><span>＋ New list…</span>`;
+  newItem.addEventListener("click", promptNewList);
+  dd.appendChild(newItem);
+}
+
+function updateListUI() {
+  const list = activeList();
+  const cfg  = LIST_CONFIGS[list.type] || LIST_CONFIGS.custom;
+  document.getElementById("list-name-display").innerHTML = cfg.displayName(list.name);
+  document.getElementById("add-btn").textContent = cfg.addLabel;
+  document.getElementById("add-input").placeholder = cfg.addPlaceholder;
+  document.title = list.name;
+}
+
+function switchList(id) {
+  closeListPicker();
+  if (id === activeListId) return;
+  save();
+  activeListId = id;
+  try { localStorage.setItem(ACTIVE_KEY, id); } catch(e) {}
+  undoStack.length = 0;
+  compareState = null;
+  compareMode  = false;
+  document.getElementById("compare-switcher").style.display = "none";
+  // Reset state to default then load saved
+  const list = activeList();
+  state = { tiers: { S:[], A:[], B:[], C:[], D:[], E:[], F:[] }, tierDefs: DEFAULT_TIER_DEFS.map(t => ({...t})), unranked: [] };
+  load();
+  updateListUI();
+  render();
+  // If this list has never been saved (fresh), load its defaults
+  if (!localStorage.getItem(stateKey(id))) {
+    if (list.type === "snacks") { save(); loadSnackImages(); }
+    else if (list.type === "vtuber") { save(); loadDefaultImages(); }
+  }
+}
+
+function promptNewList() {
+  closeListPicker();
+  const name = prompt("List name:");
+  if (!name || !name.trim()) return;
+  const id = "list_" + Date.now();
+  lists.push({ id, name: name.trim(), type: "custom" });
+  saveLists();
+  switchList(id);
+}
+
+/* ── Wikipedia image fetch (for snacks) ── */
+async function fetchWikipediaImage(title) {
+  const params = new URLSearchParams({
+    action: "query", titles: title, prop: "pageimages",
+    format: "json", pithumbsize: "300", origin: "*",
+  });
+  const res = await fetch(`https://en.wikipedia.org/w/api.php?${params}`);
+  if (!res.ok) throw new Error("Wikipedia API " + res.status);
+  const data = await res.json();
+  const pages = data.query?.pages;
+  if (!pages) return null;
+  return Object.values(pages)[0]?.thumbnail?.source || null;
+}
+
+async function searchWikipedia(query) {
+  const params = new URLSearchParams({
+    action: "opensearch", search: query, limit: "1",
+    namespace: "0", format: "json", origin: "*",
+  });
+  const res = await fetch(`https://en.wikipedia.org/w/api.php?${params}`);
+  if (!res.ok) return null;
+  const data = await res.json();
+  return (data[1] && data[1].length > 0) ? data[1][0] : null;
+}
+
+async function loadSnackImages() {
+  const pool = document.getElementById("unranked");
+  pool.innerHTML = '<span class="pool-empty">Fetching snack images…</span>';
+  const results = await Promise.allSettled(
+    SNACK_DEFAULTS.map(async snk => {
+      try {
+        const title = await searchWikipedia(snk.name);
+        if (title) {
+          const img = await fetchWikipediaImage(title);
+          return { id: snk.id, name: snk.name, img };
+        }
+      } catch(e) {}
+      return { id: snk.id, name: snk.name, img: null };
+    })
+  );
+  state.unranked = results.map((r, i) =>
+    r.status === "fulfilled" ? r.value : { id: SNACK_DEFAULTS[i].id, name: SNACK_DEFAULTS[i].name, img: null }
+  );
+  save();
+  render();
+}
+
 /* ── Compare ── */
 function findTierByName(name, st) {
   const n = name.toLowerCase().trim();
@@ -2255,14 +2548,23 @@ if (localStorage.getItem("vtl_tip_dismissed")) {
 }
 updateTopPadding();
 updateBottomPadding();
+initLists();
 load();
+updateListUI();
 const hasData = state.unranked.length > 0 || Object.values(state.tiers).some(a => a.length > 0);
 if (!hasData) {
+  const type = activeList().type;
   render();
-  loadDefaultImages();
+  if (type === "snacks") loadSnackImages();
+  else loadDefaultImages();
 } else {
   render();
 }
+
+// Close list picker when clicking outside
+document.addEventListener("click", e => {
+  if (!document.getElementById("list-picker-wrap").contains(e.target)) closeListPicker();
+});
 </script>
 </body>
 </html>
