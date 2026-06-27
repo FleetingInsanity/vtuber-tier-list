@@ -480,9 +480,13 @@
       flex-wrap: wrap;
       align-items: center;
     }
-    .add-row input[type="text"] {
+    .add-input-wrap {
       flex: 1;
       min-width: 220px;
+      position: relative;
+    }
+    .add-input-wrap input[type="text"] {
+      width: 100%;
       background: var(--bg2);
       border: 0.5px solid var(--border);
       border-radius: 8px;
@@ -492,10 +496,39 @@
       outline: none;
       transition: border-color 0.15s;
     }
-    .add-row input[type="text"]:focus {
+    .add-input-wrap input[type="text"]:focus {
       border-color: var(--accent);
     }
-    .add-row input::placeholder { color: var(--text-muted); }
+    .add-input-wrap input::placeholder { color: var(--text-muted); }
+    #add-suggestions {
+      display: none;
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0; right: 0;
+      background: var(--bg2);
+      border: 0.5px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+      z-index: 200;
+      overflow: hidden;
+    }
+    #add-suggestions.open { display: block; }
+    .suggestion-item {
+      padding: 8px 12px;
+      font-size: 0.82rem;
+      cursor: pointer;
+      color: var(--text);
+      transition: background 0.1s;
+    }
+    .suggestion-item:hover, .suggestion-item.active {
+      background: var(--surface);
+      color: var(--accent);
+    }
+    .suggestion-loading {
+      padding: 8px 12px;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
     button {
       background: transparent;
       border: 0.5px solid rgba(255,255,255,0.2);
@@ -785,8 +818,11 @@
   </button>
   <div class="panel-body">
     <div class="add-row">
-      <input type="text" id="add-input"
-        placeholder="Paste a fandom wiki URL or type a name…" />
+      <div class="add-input-wrap">
+        <input type="text" id="add-input"
+          placeholder="Paste a fandom wiki URL or type a name…" autocomplete="off" />
+        <div id="add-suggestions"></div>
+      </div>
       <button class="primary" id="add-btn" onclick="handleAdd()">Add VTuber</button>
       <button onclick="document.getElementById('local-img-input').click()">Local Image</button>
       <button onclick="resetAll()">Reset</button>
@@ -1266,9 +1302,97 @@ async function handleAdd() {
   render();
 }
 
-document.getElementById("add-input").addEventListener("keydown", e => {
-  if (e.key === "Enter") handleAdd();
-});
+/* ── Add input autocomplete ── */
+(function() {
+  const input = document.getElementById("add-input");
+  const box   = document.getElementById("add-suggestions");
+  let debounceTimer = null;
+  let activeIdx = -1;
+  let lastResults = [];
+
+  function closeSuggestions() {
+    box.classList.remove("open");
+    box.innerHTML = "";
+    activeIdx = -1;
+    lastResults = [];
+  }
+
+  function setActive(idx) {
+    const items = box.querySelectorAll(".suggestion-item");
+    items.forEach((el, i) => el.classList.toggle("active", i === idx));
+    activeIdx = idx;
+  }
+
+  function pickSuggestion(title) {
+    input.value = title;
+    closeSuggestions();
+    handleAdd();
+  }
+
+  function renderSuggestions(titles) {
+    box.innerHTML = "";
+    lastResults = titles;
+    if (!titles.length) { closeSuggestions(); return; }
+    titles.forEach((title, i) => {
+      const el = document.createElement("div");
+      el.className = "suggestion-item";
+      el.textContent = title;
+      el.addEventListener("mousedown", e => { e.preventDefault(); pickSuggestion(title); });
+      box.appendChild(el);
+    });
+    box.classList.add("open");
+    activeIdx = -1;
+  }
+
+  async function fetchSuggestions(query) {
+    const params = new URLSearchParams({
+      action: "opensearch", search: query, limit: "8",
+      namespace: "0", format: "json", origin: "*",
+    });
+    const res = await fetch(`https://virtualyoutuber.fandom.com/api.php?${params}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data[1] || [];
+  }
+
+  input.addEventListener("input", () => {
+    const val = input.value.trim();
+    clearTimeout(debounceTimer);
+    if (!val || val.startsWith("http")) { closeSuggestions(); return; }
+    box.innerHTML = '<div class="suggestion-loading">Searching wiki…</div>';
+    box.classList.add("open");
+    debounceTimer = setTimeout(async () => {
+      try {
+        const results = await fetchSuggestions(val);
+        renderSuggestions(results);
+      } catch { closeSuggestions(); }
+    }, 280);
+  });
+
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter") {
+      if (activeIdx >= 0 && lastResults[activeIdx]) {
+        e.preventDefault();
+        pickSuggestion(lastResults[activeIdx]);
+      } else {
+        closeSuggestions();
+        handleAdd();
+      }
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActive(Math.min(activeIdx + 1, lastResults.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive(Math.max(activeIdx - 1, -1));
+    } else if (e.key === "Escape") {
+      closeSuggestions();
+    }
+  });
+
+  input.addEventListener("blur", () => setTimeout(closeSuggestions, 150));
+})();
 
 function addVtuber(name, img) {
   const id = "vt_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
