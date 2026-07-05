@@ -894,7 +894,7 @@
     </div>
     <p class="hint" id="hint-vtuber">
       Type a name to add a VTuber — the wiki is searched first, then Twitch and Twitter as fallbacks, with initials if nothing is found.<br>
-      Or paste a URL directly: <code>virtualyoutuber.fandom.com/wiki/…</code> fetches from the wiki; <code>twitch.tv/…</code> or <code>twitter.com/…</code> fetches the profile avatar.
+      Or paste a URL directly: <code>virtualyoutuber.fandom.com/wiki/…</code> fetches from the wiki; <code>twitch.tv/…</code> fetches the Twitch avatar; <code>x.com/…</code> or <code>twitter.com/…</code> tries the X avatar then falls back to the wiki (X avatars are often restricted).
     </p>
     <p class="hint" style="margin-top:8px;">
       <strong>Local Image</strong> — pick an image file from your device to use as the avatar instead of fetching online.<br>
@@ -1304,11 +1304,23 @@ function setStatus(msg, type) {
 
 /* ── Unavatar fallback ── */
 async function tryUnavatar(platform, username) {
-  try {
-    const url = `https://unavatar.io/${platform}/${encodeURIComponent(username)}`;
-    const res = await fetch(url);
-    if (res.ok && (res.headers.get("content-type") || "").startsWith("image/")) return url;
-  } catch(e) {}
+  // Try the given platform name, then common aliases
+  const aliases = platform === "twitter" ? ["twitter", "x"] : [platform];
+  for (const p of aliases) {
+    try {
+      const url = `https://unavatar.io/${p}/${encodeURIComponent(username)}`;
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const ct = res.headers.get("content-type") || "";
+      if (!ct.startsWith("image/")) continue;
+      // Reject SVG placeholder that unavatar returns when no avatar is found
+      if (ct.includes("svg")) {
+        const text = await res.clone().text();
+        if (text.includes("fallback") || text.includes("placeholder") || text.length < 500) continue;
+      }
+      return url;
+    } catch(e) {}
+  }
   return null;
 }
 
@@ -1361,14 +1373,26 @@ async function handleAdd() {
     return;
   }
 
-  // 3. Twitter/X URL
+  // 3. Twitter/X URL — also try the wiki in case this VTuber has a page
   const twitterUser = parseTwitterUsername(input);
   if (twitterUser) {
-    setStatus(`Fetching Twitter avatar for ${twitterUser}…`, "loading");
-    const img = await tryUnavatar("twitter", twitterUser);
+    setStatus(`Fetching avatar for @${twitterUser}…`, "loading");
+    let img = await tryUnavatar("twitter", twitterUser);
+    if (!img) {
+      // X/Twitter avatar APIs are often restricted; try the VTuber wiki as fallback
+      setStatus(`Trying wiki for @${twitterUser}…`, "loading");
+      try {
+        const wikiTitle = await searchWiki(twitterUser);
+        if (wikiTitle) { const r = await fetchWikiImage(wikiTitle); img = r?.img || null; }
+      } catch(e) {}
+    }
     addVtuber(twitterUser, img);
     clearInput();
-    setStatus(img ? `Added ${twitterUser} with Twitter avatar.` : `Added ${twitterUser} (no avatar found).`, img ? "ok" : "error");
+    setStatus(
+      img ? `Added @${twitterUser} with avatar.`
+          : `Added @${twitterUser} — X/Twitter avatar unavailable; try pasting the wiki URL instead.`,
+      img ? "ok" : "error"
+    );
     btn.disabled = false;
     render();
     return;
