@@ -894,7 +894,7 @@
     </div>
     <p class="hint" id="hint-vtuber">
       Type a name to add a VTuber — the wiki is searched first, then Twitch and Twitter as fallbacks, with initials if nothing is found.<br>
-      Or paste a URL directly: <code>virtualyoutuber.fandom.com/wiki/…</code> fetches from the wiki. Twitch and X URLs will add the entry without an image — both platforms now require server-side auth to fetch avatars. Use the wiki URL for best results.
+      Or paste a URL directly: <code>virtualyoutuber.fandom.com/wiki/…</code> fetches from the wiki; <code>youtube.com/…</code> fetches the YouTube avatar; paste any direct image URL (e.g. right-click → Copy image address) to use it as the avatar. Twitch and X require server-side auth so avatars can't be fetched.
     </p>
     <p class="hint" style="margin-top:8px;">
       <strong>Local Image</strong> — pick an image file from your device to use as the avatar instead of fetching online.<br>
@@ -1231,6 +1231,35 @@ function parseTwitterUsername(input) {
   return null;
 }
 
+function parseYoutubeUsername(input) {
+  try {
+    const u = new URL(input);
+    if (!u.hostname.includes("youtube.com") && !u.hostname.includes("youtu.be")) return null;
+    // /channel/UCxxx, /@handle, /user/name, /c/name
+    const parts = u.pathname.split("/").filter(Boolean);
+    if (!parts.length) return null;
+    const seg = parts[0].startsWith("@") ? parts[0].slice(1) : parts[1] || parts[0];
+    return seg || null;
+  } catch(e) {}
+  return null;
+}
+
+async function tryDirectImageUrl(url) {
+  const IMAGE_EXTS = /\.(jpe?g|png|gif|webp|avif|svg)(\?.*)?$/i;
+  const IMAGE_HOSTS = ["pbs.twimg.com", "cdn.discordapp.com", "i.imgur.com",
+                       "media.discordapp.net", "i.redd.it", "static-cdn.jtvnw.net"];
+  try {
+    const u = new URL(url);
+    const looksLikeImage = IMAGE_EXTS.test(u.pathname) || IMAGE_HOSTS.some(h => u.hostname.includes(h));
+    if (!looksLikeImage) return null;
+    const res = await fetch(url, { method: "HEAD" });
+    if (res.ok && (res.headers.get("content-type") || "").startsWith("image/")) return url;
+    // HEAD may be blocked — fall back to checking extension alone
+    if (IMAGE_EXTS.test(u.pathname)) return url;
+  } catch(e) {}
+  return null;
+}
+
 function deriveUsername(name) {
   return name.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -1350,7 +1379,34 @@ async function handleAdd() {
     return;
   }
 
-  // 2. Twitch URL — try unavatar; Twitch now requires OAuth so this may fail
+  // 2. Direct image URL — any URL pointing straight to an image
+  if (/^https?:\/\//i.test(input)) {
+    const directImg = await tryDirectImageUrl(input);
+    if (directImg) {
+      const name = new URL(input).hostname.replace(/^www\./, "");
+      addVtuber(name, directImg);
+      clearInput();
+      setStatus(`Added with image from ${name}.`, "ok");
+      btn.disabled = false;
+      render();
+      return;
+    }
+  }
+
+  // 3. YouTube channel URL
+  const youtubeUser = parseYoutubeUsername(input);
+  if (youtubeUser) {
+    setStatus(`Fetching YouTube avatar for ${youtubeUser}…`, "loading");
+    const img = await tryUnavatar("youtube", youtubeUser);
+    addVtuber(youtubeUser, img);
+    clearInput();
+    setStatus(img ? `Added ${youtubeUser} with YouTube avatar.` : `Added ${youtubeUser} (no avatar found).`, img ? "ok" : "error");
+    btn.disabled = false;
+    render();
+    return;
+  }
+
+  // 4. Twitch URL — try unavatar; Twitch now requires OAuth so this may fail
   const twitchUser = parseTwitchUsername(input);
   if (twitchUser) {
     setStatus(`Fetching Twitch avatar for ${twitchUser}…`, "loading");
@@ -1367,7 +1423,7 @@ async function handleAdd() {
     return;
   }
 
-  // 3. Twitter/X URL — avatars are not fetchable without auth; add without image
+  // 5. Twitter/X URL — avatars are not fetchable without auth; add without image
   const twitterUser = parseTwitterUsername(input);
   if (twitterUser) {
     addVtuber(twitterUser, null);
@@ -1378,7 +1434,7 @@ async function handleAdd() {
     return;
   }
 
-  // 4. Fandom wiki URL
+  // 6. Fandom wiki URL
   const wikiTitle = parseWikiTitle(input);
   if (wikiTitle) {
     setStatus("Fetching from fandom wiki…", "loading");
@@ -1397,7 +1453,7 @@ async function handleAdd() {
     return;
   }
 
-  // 5. Plain name
+  // 7. Plain name
   const listType = activeList().type;
 
   // Snacks / custom — try OFF → food fandom → Wikipedia
