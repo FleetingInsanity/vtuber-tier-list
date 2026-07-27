@@ -894,7 +894,7 @@
     </div>
     <p class="hint" id="hint-vtuber">
       Type a name to add a VTuber — the wiki is searched first, then Twitch and Twitter as fallbacks, with initials if nothing is found.<br>
-      Or paste a URL directly: <code>virtualyoutuber.fandom.com/wiki/…</code> fetches from the wiki; <code>twitch.tv/…</code> fetches the Twitch avatar; <code>x.com/…</code> adds the entry without an image (X avatars require auth — use the wiki URL instead).
+      Or paste a URL directly: <code>virtualyoutuber.fandom.com/wiki/…</code> fetches from the wiki. Twitch and X URLs will add the entry without an image — both platforms now require server-side auth to fetch avatars. Use the wiki URL for best results.
     </p>
     <p class="hint" style="margin-top:8px;">
       <strong>Local Image</strong> — pick an image file from your device to use as the avatar instead of fetching online.<br>
@@ -1350,14 +1350,18 @@ async function handleAdd() {
     return;
   }
 
-  // 2. Twitch URL
+  // 2. Twitch URL — try unavatar; Twitch now requires OAuth so this may fail
   const twitchUser = parseTwitchUsername(input);
   if (twitchUser) {
     setStatus(`Fetching Twitch avatar for ${twitchUser}…`, "loading");
     const img = await tryUnavatar("twitch", twitchUser);
     addVtuber(twitchUser, img);
     clearInput();
-    setStatus(img ? `Added ${twitchUser} with Twitch avatar.` : `Added ${twitchUser} (no avatar found).`, img ? "ok" : "error");
+    setStatus(
+      img ? `Added ${twitchUser} with Twitch avatar.`
+          : `Added ${twitchUser} — Twitch avatars require auth. Paste their wiki URL to get an image.`,
+      img ? "ok" : "error"
+    );
     btn.disabled = false;
     render();
     return;
