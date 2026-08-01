@@ -1123,6 +1123,35 @@ let dragOccurred = false;
 let insertionTarget = null;
 const undoStack = [];
 
+/* ── Holodex VTuber index (loaded from vtubers.json) ── */
+let vtuberIndex = []; // [{name, alt, photo, id}]
+
+async function loadVtuberIndex() {
+  try {
+    const res = await fetch("vtubers.json");
+    if (res.ok) {
+      vtuberIndex = await res.json();
+      console.log(`VTuber index loaded: ${vtuberIndex.length} entries`);
+    }
+  } catch(e) {
+    console.warn("Could not load vtubers.json:", e);
+  }
+}
+
+function searchVtuberIndex(query) {
+  if (!vtuberIndex.length || !query) return [];
+  const q = query.toLowerCase();
+  const exact = [], starts = [], contains = [];
+  for (const v of vtuberIndex) {
+    const n = v.name.toLowerCase();
+    const a = (v.alt || "").toLowerCase();
+    if (n === q || a === q)                         exact.push(v);
+    else if (n.startsWith(q) || a.startsWith(q))   starts.push(v);
+    else if (n.includes(q) || a.includes(q))        contains.push(v);
+  }
+  return [...exact, ...starts, ...contains].slice(0, 8);
+}
+
 function pushUndo() {
   undoStack.push(JSON.stringify(state));
   if (undoStack.length > 30) undoStack.shift();
@@ -1468,7 +1497,19 @@ async function handleAdd() {
     return;
   }
 
-  // VTuber — fandom wiki search → unavatar twitch → unavatar twitter → initials
+  // VTuber — Holodex index → fandom wiki search → unavatar twitch → initials
+  // Check local Holodex index first (fast, no network call)
+  const indexMatches = searchVtuberIndex(input);
+  if (indexMatches.length === 1 || (indexMatches.length > 0 && indexMatches[0].name.toLowerCase() === input.toLowerCase())) {
+    const match = indexMatches[0];
+    addVtuber(match.name, match.photo);
+    clearInput();
+    setStatus(`Added ${match.name} from VTuber index.`, "ok");
+    btn.disabled = false;
+    render();
+    return;
+  }
+
   setStatus("Searching wiki…", "loading");
   try {
     const foundTitle = await searchWiki(input);
@@ -1560,6 +1601,11 @@ async function handleAdd() {
   let currentAbort = null;
 
   async function fetchSuggestions(query, signal) {
+    // For VTuber lists: check local index first (instant, no network)
+    if (activeList().type === "vtuber" && vtuberIndex.length) {
+      const local = searchVtuberIndex(query).map(v => v.name);
+      if (local.length) return local;
+    }
     const base = activeList().type === "vtuber"
       ? "https://virtualyoutuber.fandom.com/api.php"
       : "https://en.wikipedia.org/w/api.php";
@@ -2646,6 +2692,7 @@ updateBottomPadding();
 initLists();
 load();
 updateListUI();
+loadVtuberIndex(); // non-blocking; populates vtuberIndex for search/autocomplete
 const hasData = state.unranked.length > 0 || Object.values(state.tiers).some(a => a.length > 0);
 if (!hasData) {
   const type = activeList().type;
