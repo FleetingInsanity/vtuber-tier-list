@@ -2104,6 +2104,7 @@ function removeVt(id) {
 
 /* ── Load default images from wiki ── */
 async function loadDefaultImages() {
+  const listId = activeListId; // capture now; user may switch lists before this resolves
   const pool = document.getElementById("unranked");
   pool.innerHTML = '<span class="pool-empty">Fetching avatars from wiki…</span>';
 
@@ -2133,6 +2134,16 @@ async function loadDefaultImages() {
       return { id: vt.id, name: vt.name, img: null };
     })
   );
+
+  if (activeListId !== listId) {
+    // User switched away — save quietly to the original list key without touching current state/render
+    const savedState = JSON.parse(localStorage.getItem(stateKey(listId)) || "{}");
+    savedState.unranked = results.map((r, i) =>
+      r.status === "fulfilled" ? r.value : { id: DEFAULTS[i].id, name: DEFAULTS[i].name, img: null }
+    );
+    try { localStorage.setItem(stateKey(listId), JSON.stringify(savedState)); } catch(e) {}
+    return;
+  }
 
   state.unranked = results.map((r, i) =>
     r.status === "fulfilled" ? r.value : { id: DEFAULTS[i].id, name: DEFAULTS[i].name, img: null }
@@ -2861,6 +2872,7 @@ async function fetchSnackImage(name) {
 }
 
 async function loadSnackImages() {
+  const listId = activeListId; // capture now; user may switch lists before this resolves
   const pool = document.getElementById("unranked");
   pool.innerHTML = '<span class="pool-empty">Fetching snack images…</span>';
   const results = await Promise.allSettled(
@@ -2869,6 +2881,17 @@ async function loadSnackImages() {
       return { id: snk.id, name: snk.name, img };
     })
   );
+
+  if (activeListId !== listId) {
+    // User switched away — save quietly to the original list key without touching current state/render
+    const savedState = JSON.parse(localStorage.getItem(stateKey(listId)) || "{}");
+    savedState.unranked = results.map((r, i) =>
+      r.status === "fulfilled" ? r.value : { id: SNACK_DEFAULTS[i].id, name: SNACK_DEFAULTS[i].name, img: null }
+    );
+    try { localStorage.setItem(stateKey(listId), JSON.stringify(savedState)); } catch(e) {}
+    return;
+  }
+
   state.unranked = results.map((r, i) =>
     r.status === "fulfilled" ? r.value : { id: SNACK_DEFAULTS[i].id, name: SNACK_DEFAULTS[i].name, img: null }
   );
@@ -2878,6 +2901,7 @@ async function loadSnackImages() {
 
 // Silently back-fill images for any snack entries that have none (runs in background on load)
 async function retryMissingSnackImages() {
+  const listId = activeListId;
   if (activeList().type !== "snacks") return;
   const allEntries = [...state.unranked, ...Object.values(state.tiers).flat()];
   const missing = allEntries.filter(e => !e.img);
@@ -2887,6 +2911,7 @@ async function retryMissingSnackImages() {
     const img = await fetchSnackImage(entry.name);
     if (img) { entry.img = img; changed = true; }
   }));
+  if (activeListId !== listId) return; // user switched away; don't clobber current list
   if (changed) { save(); render(); }
 }
 
