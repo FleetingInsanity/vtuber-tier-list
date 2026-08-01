@@ -1,6 +1,5 @@
-// Cloudflare Worker — DuckDuckGo image search proxy
-// Deploy with: cd worker && npx wrangler deploy
-// The deployed URL goes into the app's Settings → Image Search Worker URL
+// Cloudflare Worker — image search proxy (Bing primary, DDG fallback)
+// Deploy: cd worker && npx wrangler deploy
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -22,43 +21,68 @@ export default {
       return new Response(JSON.stringify({ error: "Missing ?q=", images: [] }), { headers: CORS });
     }
 
-    try {
-      // Step 1: fetch the DDG search page to get the vqd token
-      const initRes = await fetch(
-        `https://duckduckgo.com/?q=${encodeURIComponent(query)}&iax=images&ia=images`,
-        { headers: { "User-Agent": UA } }
-      );
-      const html = await initRes.text();
+    // Try Bing first — no token required, image URLs in murl JSON fields
+    let images = await fetchBing(query);
 
-      // vqd appears in multiple formats across DDG versions
-      const vqdMatch =
-        html.match(/vqd=["']?([0-9-]+)["']?/) ||
-        html.match(/"vqd"\s*:\s*"([^"]+)"/) ||
-        html.match(/vqd%3D([0-9-]+)/);
-
-      if (!vqdMatch) {
-        return new Response(JSON.stringify({ error: "vqd not found", images: [] }), { headers: CORS });
-      }
-      const vqd = vqdMatch[1];
-
-      // Step 2: fetch image results
-      const imgRes = await fetch(
-        `https://duckduckgo.com/i.js?q=${encodeURIComponent(query)}&o=json&p=1&vqd=${vqd}&f=,,,,,`,
-        { headers: { "User-Agent": UA, "Referer": "https://duckduckgo.com/" } }
-      );
-      const data = await imgRes.json();
-
-      const images = (data.results || []).slice(0, 15).map(r => ({
-        img:    r.image,
-        thumb:  r.thumbnail,
-        title:  r.title,
-        width:  r.width,
-        height: r.height,
-      }));
-
-      return new Response(JSON.stringify({ images }), { headers: CORS });
-    } catch (e) {
-      return new Response(JSON.stringify({ error: String(e), images: [] }), { headers: CORS });
+    // Fall back to DuckDuckGo if Bing returns nothing
+    if (!images.length) {
+      images = await fetchDDG(query);
     }
+
+    return new Response(JSON.stringify({ images }), { headers: CORS });
   },
 };
+
+async function fetchBing(query) {
+  try {
+    const res = await fetch(
+      `https://www.bing.com/images/search?q=${encodeURIComponent(query)}&form=HDRSC2&first=1`,
+      { headers: { "User-Agent": UA, "Accept-Language": "en-US,en;q=0.9" } }
+    );
+    const html = await res.text();
+
+    // Bing embeds image metadata as JSON — murl = media/original URL, turl = thumbnail URL
+    const images = [];
+    const re = /"murl":"([^"]+)","turl":"([^"]+)"/g;
+    let m;
+    while ((m = re.exec(html)) !== null && images.length < 15) {
+      images.push({ img: m[1], thumb: m[2], title: "", source: "Bing" });
+    }
+    return images;
+  } catch (e) {
+    return [];
+  }
+}
+
+async function fetchDDG(query) {
+  try {
+    // Step 1: get vqd token
+    const initRes = await fetch(
+      `https://duckduckgo.com/?q=${encodeURIComponent(query)}&iax=images&ia=images`,
+      { headers: { "User-Agent": UA } }
+    );
+    const html = await initRes.text();
+
+    // Try every known vqd format DDG has used
+    const vqdMatch =
+      html.match(/vqd=["']([^"']+)["']/) ||
+      html.match(/"vqd"\s*:\s*"([^"]+)"/) ||
+      html.match(/vqd=([\d-]+)/) ||
+      html.match(/vqd%3D([\d-]+)/);
+
+    if (!vqdMatch) return [];
+    const vqd = vqdMatch[1];
+
+    // Step 2: fetch image results
+    const imgRes = await fetch(
+      `https://duckduckgo.com/i.js?q=${encodeURIComponent(query)}&o=json&p=1&vqd=${encodeURIComponent(vqd)}&f=,,,,,`,
+      { headers: { "User-Agent": UA, "Referer": "https://duckduckgo.com/" } }
+    );
+    const data = await imgRes.json();
+    return (data.results || []).slice(0, 15).map(r => ({
+      img: r.image, thumb: r.thumbnail, title: r.title || "", source: "DDG",
+    }));
+  } catch (e) {
+    return [];
+  }
+}
