@@ -1579,52 +1579,27 @@ async function handleAdd() {
     return;
   }
 
-  // VTuber — Holodex index → fandom wiki search → unavatar twitch → initials
-  // Check local Holodex index first (fast, no network call)
+  // VTuber — Holodex index (exact match only) → image picker
+  // Only use the index when we have a confident match; never blindly accept wiki
+  // search results for a typed name since they frequently return wrong VTubers.
   const indexMatches = searchVtuberIndex(input);
-  if (indexMatches.length === 1 || (indexMatches.length > 0 && indexMatches[0].name.toLowerCase() === input.toLowerCase())) {
-    const match = indexMatches[0];
-    addVtuber(match.name, match.photo);
+  const exactMatch = indexMatches.find(v => v.name.toLowerCase() === input.toLowerCase());
+  if (exactMatch) {
+    addVtuber(exactMatch.name, exactMatch.photo);
     clearInput();
-    setStatus(`Added ${match.name} from VTuber index.`, "ok");
+    setStatus(`Added ${exactMatch.name} from VTuber index.`, "ok");
     btn.disabled = false;
     render();
     return;
   }
 
-  setStatus("Searching wiki…", "loading");
-  try {
-    const foundTitle = await searchWiki(input);
-    if (foundTitle) {
-      setStatus(`Found "${foundTitle}", fetching avatar…`, "loading");
-      const result = await fetchWikiImage(foundTitle);
-      addVtuber(result.name, result.img);
-      clearInput();
-      setStatus(result.img ? `Added ${result.name} with wiki avatar.` : `Added ${result.name} (no image on wiki page).`, "ok");
-      btn.disabled = false;
-      render();
-      return;
-    }
-  } catch(e) {}
-
+  // Try YouTube unavatar as a quick silent attempt before showing the picker
   const derived = deriveUsername(input);
-  setStatus(`Not on wiki — trying Twitch…`, "loading");
-  let img = await tryUnavatar("twitch", derived);
-  if (img) {
-    addVtuber(input, img);
+  const quickImg = await tryUnavatar("youtube", derived);
+  if (quickImg) {
+    addVtuber(input, quickImg);
     clearInput();
-    setStatus(`Added "${input}" with Twitch avatar.`, "ok");
-    btn.disabled = false;
-    render();
-    return;
-  }
-
-  setStatus(`Trying Twitter…`, "loading");
-  img = await tryUnavatar("twitter", derived);
-  if (img) {
-    addVtuber(input, img);
-    clearInput();
-    setStatus(`Added "${input}" with Twitter avatar.`, "ok");
+    setStatus(`Added "${input}" with YouTube avatar.`, "ok");
     btn.disabled = false;
     render();
     return;
