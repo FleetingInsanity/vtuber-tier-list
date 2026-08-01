@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>VTuber Tier List</title>
+  <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
   <style>
     /* ── Reset & base ── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -588,6 +589,100 @@
     }
     .suggestion-add-anyway:hover { background: var(--surface); color: var(--accent); }
 
+    /* ── Share button ── */
+    #share-btn {
+      padding: 5px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--accent);
+      background: transparent;
+      color: var(--accent);
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    #share-btn:hover { background: rgba(109,92,230,0.15); }
+
+    /* ── Share modal ── */
+    #share-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 1100;
+      align-items: center;
+      justify-content: center;
+    }
+    #share-overlay.open { display: flex; }
+    #share-modal {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 24px 28px;
+      width: min(460px, 94vw);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    #share-modal h3 { margin: 0; font-size: 1rem; color: var(--text); }
+    #share-url-box {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    #share-url-input {
+      flex: 1;
+      padding: 7px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 0.8rem;
+      font-family: monospace;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #share-url-input:focus { outline: none; border-color: var(--accent); }
+    #share-copy-btn {
+      padding: 7px 14px;
+      border-radius: 6px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.85rem;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: opacity 0.15s;
+    }
+    #share-copy-btn:hover { opacity: 0.85; }
+    #share-hint { font-size: 0.78rem; color: var(--text-muted); line-height: 1.5; }
+    #share-modal-actions { display: flex; justify-content: flex-end; }
+
+    /* ── Shared-list banner ── */
+    #shared-banner {
+      display: none;
+      background: var(--accent);
+      color: #fff;
+      text-align: center;
+      padding: 8px 16px;
+      font-size: 0.85rem;
+      gap: 12px;
+      align-items: center;
+      justify-content: center;
+    }
+    #shared-banner.visible { display: flex; }
+    #shared-banner button {
+      padding: 4px 12px;
+      border-radius: 5px;
+      border: 1px solid rgba(255,255,255,0.5);
+      background: transparent;
+      color: #fff;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+    #shared-banner button:hover { background: rgba(255,255,255,0.15); }
+
     /* ── New list modal ── */
     #new-list-overlay {
       display: none;
@@ -992,6 +1087,7 @@
       </div>
       <button id="search-clear" title="Clear search">×</button>
       <span id="search-match-info"></span>
+      <button id="share-btn" onclick="shareList()" title="Share this list">Share</button>
     </div>
   </header>
 </div>
@@ -3034,19 +3130,101 @@ if (localStorage.getItem("vtl_tip_dismissed")) {
 updateTopPadding();
 updateBottomPadding();
 initLists();
-load();
-updateListUI();
 loadVtuberIndex(); // non-blocking; populates vtuberIndex for search/autocomplete
-const hasData = state.unranked.length > 0 || Object.values(state.tiers).some(a => a.length > 0);
-if (!hasData) {
-  const type = activeList().type;
+if (location.hash.startsWith("#s=")) {
+  // Shared URL — state already set by checkSharedHash(); just render it
+  updateListUI();
   render();
-  if (type === "snacks") loadSnackImages();
-  else loadDefaultImages();
 } else {
-  render();
-  retryMissingSnackImages(); // non-blocking; fills in any snacks that previously got no image
+  load();
+  updateListUI();
+  const hasData = state.unranked.length > 0 || Object.values(state.tiers).some(a => a.length > 0);
+  if (!hasData) {
+    const type = activeList().type;
+    render();
+    if (type === "snacks") loadSnackImages();
+    else loadDefaultImages();
+  } else {
+    render();
+    retryMissingSnackImages(); // non-blocking; fills in any snacks that previously got no image
+  }
 }
+
+/* ── Share via URL ── */
+function shareList() {
+  const payload = JSON.stringify({ list: activeList(), state });
+  const compressed = LZString.compressToEncodedURIComponent(payload);
+  const url = location.origin + location.pathname + "#s=" + compressed;
+  document.getElementById("share-url-input").value = url;
+  document.getElementById("share-copy-btn").textContent = "Copy";
+  document.getElementById("share-overlay").classList.add("open");
+}
+
+function closeShareModal() {
+  document.getElementById("share-overlay").classList.remove("open");
+}
+
+async function copyShareUrl() {
+  const val = document.getElementById("share-url-input").value;
+  try {
+    await navigator.clipboard.writeText(val);
+    const btn = document.getElementById("share-copy-btn");
+    btn.textContent = "Copied!";
+    setTimeout(() => { btn.textContent = "Copy"; }, 2000);
+  } catch(e) {
+    document.getElementById("share-url-input").select();
+  }
+}
+
+function importSharedList() {
+  // Save the shared state as a new list entry in this browser
+  const banner = document.getElementById("shared-banner");
+  const listMeta = JSON.parse(banner.dataset.listMeta || "{}");
+  const sharedState = JSON.parse(banner.dataset.state || "{}");
+  const id = "list_" + Date.now();
+  const name = (listMeta.name || "Shared List") + " (copy)";
+  lists.push({ id, name, type: listMeta.type || "custom" });
+  saveLists();
+  activeListId = id;
+  try { localStorage.setItem(ACTIVE_KEY, id); } catch(e) {}
+  state = sharedState;
+  save();
+  render();
+  updateListUI();
+  dismissSharedBanner();
+}
+
+function dismissSharedBanner() {
+  const banner = document.getElementById("shared-banner");
+  banner.classList.remove("visible");
+  // Clear the hash so normal navigation works
+  history.replaceState(null, "", location.pathname);
+}
+
+// On load: check for shared URL hash
+(function checkSharedHash() {
+  const hash = location.hash;
+  if (!hash.startsWith("#s=")) return;
+  try {
+    const compressed = hash.slice(3);
+    const payload = LZString.decompressFromEncodedURIComponent(compressed);
+    if (!payload) return;
+    const { list, state: sharedState } = JSON.parse(payload);
+    if (!sharedState || !sharedState.tiers) return;
+
+    // Load it as a temporary view (don't save to localStorage yet)
+    state = sharedState;
+    const banner = document.getElementById("shared-banner");
+    banner.dataset.listMeta = JSON.stringify(list || {});
+    banner.dataset.state = JSON.stringify(sharedState);
+    banner.classList.add("visible");
+  } catch(e) {}
+})();
+
+// Close share modal on backdrop click
+document.getElementById("share-overlay").addEventListener("click", e => {
+  if (e.target === document.getElementById("share-overlay")) closeShareModal();
+});
 
 // Close list picker when clicking outside
 document.addEventListener("click", e => {
@@ -3063,6 +3241,28 @@ document.getElementById("img-picker-overlay").addEventListener("click", e => {
   if (e.target === document.getElementById("img-picker-overlay")) closeImagePicker();
 });
 </script>
+
+<!-- Shared-list banner (shown when opening a shared URL) -->
+<div id="shared-banner">
+  <span>You're viewing a shared list — it hasn't been saved to your browser yet.</span>
+  <button onclick="importSharedList()">Save a copy</button>
+  <button onclick="dismissSharedBanner()">Dismiss</button>
+</div>
+
+<!-- Share modal -->
+<div id="share-overlay">
+  <div id="share-modal">
+    <h3>Share this list</h3>
+    <div id="share-url-box">
+      <input id="share-url-input" type="text" readonly>
+      <button id="share-copy-btn" onclick="copyShareUrl()">Copy</button>
+    </div>
+    <p id="share-hint">Anyone with this link can view your current rankings. Images are embedded in the URL — the link won't break if images move.</p>
+    <div id="share-modal-actions">
+      <button onclick="closeShareModal()">Close</button>
+    </div>
+  </div>
+</div>
 
 <!-- New list modal -->
 <div id="new-list-overlay">
