@@ -588,6 +588,60 @@
     }
     .suggestion-add-anyway:hover { background: var(--surface); color: var(--accent); }
 
+    /* ── New list modal ── */
+    #new-list-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 1100;
+      align-items: center;
+      justify-content: center;
+    }
+    #new-list-overlay.open { display: flex; }
+    #new-list-modal {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 24px 28px;
+      width: min(380px, 92vw);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    #new-list-modal h3 { margin: 0; font-size: 1rem; color: var(--text); }
+    #new-list-name-input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 0.95rem;
+    }
+    #new-list-name-input:focus { outline: none; border-color: var(--accent); }
+    .nl-type-row {
+      display: flex;
+      gap: 8px;
+    }
+    .nl-type-btn {
+      flex: 1;
+      padding: 8px 4px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 0.82rem;
+      cursor: pointer;
+      text-align: center;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .nl-type-btn:hover { border-color: var(--accent); }
+    .nl-type-btn.selected { border-color: var(--accent); color: var(--accent); background: rgba(109,92,230,0.12); font-weight: 600; }
+    .nl-type-icon { font-size: 1.2rem; display: block; margin-bottom: 3px; }
+    #new-list-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
     /* ── Image picker modal ── */
     #img-picker-overlay {
       display: none;
@@ -2699,10 +2753,26 @@ function switchList(id) {
 
 function promptNewList() {
   closeListPicker();
-  const name = prompt("List name:");
-  if (!name || !name.trim()) return;
+  // Reset modal state
+  document.getElementById("new-list-name-input").value = "";
+  document.querySelectorAll(".nl-type-btn").forEach(b => b.classList.remove("selected"));
+  document.querySelector('.nl-type-btn[data-type="vtuber"]').classList.add("selected");
+  document.getElementById("new-list-overlay").classList.add("open");
+  setTimeout(() => document.getElementById("new-list-name-input").focus(), 50);
+}
+
+function closeNewListModal() {
+  document.getElementById("new-list-overlay").classList.remove("open");
+}
+
+function submitNewList() {
+  const name = document.getElementById("new-list-name-input").value.trim();
+  if (!name) { document.getElementById("new-list-name-input").focus(); return; }
+  const selectedBtn = document.querySelector(".nl-type-btn.selected");
+  const type = selectedBtn ? selectedBtn.dataset.type : "custom";
+  closeNewListModal();
   const id = "list_" + Date.now();
-  lists.push({ id, name: name.trim(), type: "custom" });
+  lists.push({ id, name, type });
   saveLists();
   switchList(id);
 }
@@ -2915,11 +2985,40 @@ document.addEventListener("click", e => {
   if (!document.getElementById("list-picker-wrap").contains(e.target)) closeListPicker();
 });
 
+// Close new-list modal when clicking the backdrop
+document.getElementById("new-list-overlay").addEventListener("click", e => {
+  if (e.target === document.getElementById("new-list-overlay")) closeNewListModal();
+});
+
 // Close image picker when clicking the backdrop
 document.getElementById("img-picker-overlay").addEventListener("click", e => {
   if (e.target === document.getElementById("img-picker-overlay")) closeImagePicker();
 });
 </script>
+
+<!-- New list modal -->
+<div id="new-list-overlay">
+  <div id="new-list-modal">
+    <h3>Create a new list</h3>
+    <input id="new-list-name-input" type="text" placeholder="List name…" maxlength="60"
+      onkeydown="if(event.key==='Enter')submitNewList(); if(event.key==='Escape')closeNewListModal();">
+    <div class="nl-type-row">
+      <button class="nl-type-btn" data-type="vtuber" onclick="document.querySelectorAll('.nl-type-btn').forEach(b=>b.classList.remove('selected'));this.classList.add('selected')">
+        <span class="nl-type-icon">🎭</span>VTubers
+      </button>
+      <button class="nl-type-btn" data-type="snacks" onclick="document.querySelectorAll('.nl-type-btn').forEach(b=>b.classList.remove('selected'));this.classList.add('selected')">
+        <span class="nl-type-icon">🍿</span>Snacks
+      </button>
+      <button class="nl-type-btn" data-type="custom" onclick="document.querySelectorAll('.nl-type-btn').forEach(b=>b.classList.remove('selected'));this.classList.add('selected')">
+        <span class="nl-type-icon">✏️</span>Custom
+      </button>
+    </div>
+    <div id="new-list-actions">
+      <button onclick="closeNewListModal()">Cancel</button>
+      <button class="primary" onclick="submitNewList()">Create</button>
+    </div>
+  </div>
+</div>
 
 <!-- Image picker modal -->
 <div id="img-picker-overlay">
