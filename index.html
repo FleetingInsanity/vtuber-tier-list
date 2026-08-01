@@ -2748,6 +2748,8 @@ function switchList(id) {
   if (!localStorage.getItem(stateKey(id))) {
     if (list.type === "snacks") { save(); loadSnackImages(); }
     else if (list.type === "vtuber") { save(); loadDefaultImages(); }
+  } else if (list.type === "snacks") {
+    retryMissingSnackImages();
   }
 }
 
@@ -2833,11 +2835,20 @@ async function fetchWikipediaImage(query) {
   return Object.values(idata.query?.pages || {})[0]?.thumbnail?.source || null;
 }
 
+async function fetchWorkerSnackImage(name) {
+  try {
+    const res = await fetch(`${WORKER_URL}?q=${encodeURIComponent(name + " snack food")}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return (data.images && data.images[0] && data.images[0].img) || null;
+  } catch(e) { return null; }
+}
+
 async function fetchSnackImage(name) {
-  // Race all three sources; resolve with the first non-null result
+  // Race all four sources; resolve with the first non-null result
   return new Promise(resolve => {
     let done = false;
-    let pending = 3;
+    let pending = 4;
     const tryResolve = img => {
       if (img && !done) { done = true; resolve(img); return; }
       if (--pending === 0 && !done) resolve(null);
@@ -2845,6 +2856,7 @@ async function fetchSnackImage(name) {
     fetchOpenFoodFactsImage(name).then(tryResolve).catch(() => tryResolve(null));
     fetchFoodFandomImage(name).then(tryResolve).catch(() => tryResolve(null));
     fetchWikipediaImage(name).then(tryResolve).catch(() => tryResolve(null));
+    fetchWorkerSnackImage(name).then(tryResolve).catch(() => tryResolve(null));
   });
 }
 
@@ -2862,6 +2874,20 @@ async function loadSnackImages() {
   );
   save();
   render();
+}
+
+// Silently back-fill images for any snack entries that have none (runs in background on load)
+async function retryMissingSnackImages() {
+  if (activeList().type !== "snacks") return;
+  const allEntries = [...state.unranked, ...Object.values(state.tiers).flat()];
+  const missing = allEntries.filter(e => !e.img);
+  if (!missing.length) return;
+  let changed = false;
+  await Promise.allSettled(missing.map(async entry => {
+    const img = await fetchSnackImage(entry.name);
+    if (img) { entry.img = img; changed = true; }
+  }));
+  if (changed) { save(); render(); }
 }
 
 /* ── Compare ── */
@@ -2978,6 +3004,7 @@ if (!hasData) {
   else loadDefaultImages();
 } else {
   render();
+  retryMissingSnackImages(); // non-blocking; fills in any snacks that previously got no image
 }
 
 // Close list picker when clicking outside
