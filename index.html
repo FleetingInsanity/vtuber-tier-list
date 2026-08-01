@@ -576,6 +576,88 @@
       font-size: 0.78rem;
       color: var(--text-muted);
     }
+    .suggestion-add-anyway {
+      padding: 8px 12px;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .suggestion-add-anyway:hover { background: var(--surface); color: var(--accent); }
+
+    /* ── Image picker modal ── */
+    #img-picker-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    #img-picker-overlay.open { display: flex; }
+    #img-picker-modal {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      width: min(560px, 92vw);
+      max-height: 80vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    #img-picker-modal h3 {
+      margin: 0;
+      font-size: 1rem;
+      color: var(--text);
+    }
+    #img-picker-modal h3 span { color: var(--accent); }
+    #img-picker-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+      gap: 10px;
+    }
+    .img-picker-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      border: 2px solid transparent;
+      border-radius: 8px;
+      padding: 6px;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .img-picker-cell:hover { border-color: var(--accent); background: var(--surface); }
+    .img-picker-cell img {
+      width: 80px;
+      height: 80px;
+      object-fit: cover;
+      border-radius: 6px;
+      background: var(--surface);
+    }
+    .img-picker-cell span {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      text-align: center;
+      word-break: break-word;
+      max-width: 90px;
+    }
+    #img-picker-status {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      min-height: 1.2em;
+    }
+    #img-picker-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
     button {
       background: transparent;
       border: 0.5px solid rgba(255,255,255,0.2);
@@ -1548,12 +1630,129 @@ async function handleAdd() {
     return;
   }
 
-  addVtuber(input, null);
-  clearInput();
-  setStatus(`No avatar found for "${input}" — added with initials.`, "ok");
-
+  // Nothing found automatically — show image picker
   btn.disabled = false;
+  setStatus("", "");
+  const choice = await showImagePicker(input);
+  if (choice === null) return; // cancelled
+  addVtuber(input, choice === "skip" ? null : choice);
+  clearInput();
+  setStatus(
+    choice === "skip" ? `Added "${input}" without image.` : `Added "${input}" with selected image.`,
+    "ok"
+  );
   render();
+}
+
+/* ── Image picker ── */
+let _imgPickerResolve = null;
+
+function closeImagePicker() {
+  document.getElementById("img-picker-overlay").classList.remove("open");
+  if (_imgPickerResolve) { _imgPickerResolve(null); _imgPickerResolve = null; }
+}
+
+async function fetchImageCandidates(name, listType) {
+  const results = [];
+
+  // Source 1: VTuber fandom wiki (multi-page search with images)
+  if (listType === "vtuber") {
+    try {
+      const p = new URLSearchParams({
+        action: "query", generator: "search", gsrsearch: name, gsrlimit: "10",
+        prop: "pageimages", pithumbsize: "200", format: "json", origin: "*",
+      });
+      const res = await fetch(`https://virtualyoutuber.fandom.com/api.php?${p}`);
+      if (res.ok) {
+        const data = await res.json();
+        for (const page of Object.values(data.query?.pages || {})) {
+          if (page.thumbnail?.source)
+            results.push({ img: page.thumbnail.source, label: page.title, source: "VTuber Wiki" });
+        }
+      }
+    } catch(e) {}
+  }
+
+  // Source 2: Wikipedia multi-page search with images
+  try {
+    const base = listType === "snacks" ? "https://en.wikipedia.org/w/api.php" : "https://en.wikipedia.org/w/api.php";
+    const p = new URLSearchParams({
+      action: "query", generator: "search", gsrsearch: name, gsrlimit: "10",
+      prop: "pageimages", pithumbsize: "200", format: "json", origin: "*",
+    });
+    const res = await fetch(`${base}?${p}`);
+    if (res.ok) {
+      const data = await res.json();
+      for (const page of Object.values(data.query?.pages || {})) {
+        if (page.thumbnail?.source)
+          results.push({ img: page.thumbnail.source, label: page.title, source: "Wikipedia" });
+      }
+    }
+  } catch(e) {}
+
+  // Source 3: Open Food Facts (for snacks)
+  if (listType === "snacks") {
+    try {
+      const p = new URLSearchParams({ search_terms: name, json: "1", page_size: "6", action: "process" });
+      const res = await fetch(`https://world.openfoodfacts.org/cgi/search.pl?${p}`);
+      if (res.ok) {
+        const data = await res.json();
+        for (const prod of (data.products || []).slice(0, 6)) {
+          const img = prod.image_front_url || prod.image_url;
+          if (img) results.push({ img, label: prod.product_name || name, source: "Open Food Facts" });
+        }
+      }
+    } catch(e) {}
+  }
+
+  // Deduplicate by image URL
+  const seen = new Set();
+  return results.filter(r => { if (seen.has(r.img)) return false; seen.add(r.img); return true; });
+}
+
+function showImagePicker(name) {
+  return new Promise(resolve => {
+    _imgPickerResolve = resolve;
+    document.getElementById("img-picker-name").textContent = name;
+    document.getElementById("img-picker-grid").innerHTML = "";
+    document.getElementById("img-picker-status").textContent = "Searching for images…";
+    document.getElementById("img-picker-overlay").classList.add("open");
+
+    document.getElementById("img-picker-skip").onclick = () => {
+      closeImagePicker();
+      resolve("skip");
+    };
+
+    const listType = activeList().type;
+    fetchImageCandidates(name, listType).then(candidates => {
+      const grid = document.getElementById("img-picker-grid");
+      const status = document.getElementById("img-picker-status");
+      if (!candidates.length) {
+        status.textContent = "No images found. Add without image or cancel.";
+        return;
+      }
+      status.textContent = `${candidates.length} image${candidates.length > 1 ? "s" : ""} found — click one to use it.`;
+      grid.innerHTML = "";
+      for (const c of candidates) {
+        const cell = document.createElement("div");
+        cell.className = "img-picker-cell";
+        const img = document.createElement("img");
+        img.src = c.img;
+        img.alt = c.label;
+        img.onerror = () => { cell.remove(); };
+        const lbl = document.createElement("span");
+        lbl.textContent = c.label;
+        cell.appendChild(img);
+        cell.appendChild(lbl);
+        cell.addEventListener("click", () => {
+          document.getElementById("img-picker-overlay").classList.remove("open");
+          _imgPickerResolve = null;
+          resolve(c.img);
+        });
+        grid.appendChild(cell);
+      }
+    });
+  });
 }
 
 /* ── Add input autocomplete ── */
@@ -1586,7 +1785,8 @@ async function handleAdd() {
   function renderSuggestions(titles) {
     box.innerHTML = "";
     lastResults = titles;
-    if (!titles.length) { closeSuggestions(); return; }
+    const val = input.value.trim();
+    if (!titles.length && !val) { closeSuggestions(); return; }
     titles.forEach((title, i) => {
       const el = document.createElement("div");
       el.className = "suggestion-item";
@@ -1594,6 +1794,14 @@ async function handleAdd() {
       el.addEventListener("mousedown", e => { e.preventDefault(); pickSuggestion(title); });
       box.appendChild(el);
     });
+    // Always show "Add … anyway" at the bottom so the user can trigger the image picker
+    if (val && !val.startsWith("http")) {
+      const anyway = document.createElement("div");
+      anyway.className = "suggestion-add-anyway";
+      anyway.innerHTML = `<span style="opacity:.5">＋</span> Add "<strong>${val}</strong>" and pick an image…`;
+      anyway.addEventListener("mousedown", e => { e.preventDefault(); closeSuggestions(); handleAdd(); });
+      box.appendChild(anyway);
+    }
     box.classList.add("open");
     activeIdx = -1;
   }
@@ -2707,6 +2915,24 @@ if (!hasData) {
 document.addEventListener("click", e => {
   if (!document.getElementById("list-picker-wrap").contains(e.target)) closeListPicker();
 });
+
+// Close image picker when clicking the backdrop
+document.getElementById("img-picker-overlay").addEventListener("click", e => {
+  if (e.target === document.getElementById("img-picker-overlay")) closeImagePicker();
+});
 </script>
+
+<!-- Image picker modal -->
+<div id="img-picker-overlay">
+  <div id="img-picker-modal">
+    <h3>Pick an image for <span id="img-picker-name"></span></h3>
+    <div id="img-picker-status">Searching…</div>
+    <div id="img-picker-grid"></div>
+    <div id="img-picker-actions">
+      <button class="primary" id="img-picker-skip">Add without image</button>
+      <button onclick="closeImagePicker()">Cancel</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
