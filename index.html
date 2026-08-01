@@ -978,14 +978,7 @@
       Type a name to add a VTuber — the wiki is searched first, then Twitch and Twitter as fallbacks, with initials if nothing is found.<br>
       Or paste a URL directly: <code>virtualyoutuber.fandom.com/wiki/…</code> fetches from the wiki; <code>youtube.com/…</code> fetches the YouTube avatar; paste any direct image URL (e.g. right-click → Copy image address) to use it as the avatar. Twitch and X require server-side auth so avatars can't be fetched.
     </p>
-    <div class="worker-url-row" style="margin-top:8px;display:flex;gap:6px;align-items:center;">
-      <input type="url" id="worker-url-input" placeholder="Image search worker URL (optional)…"
-        style="flex:1;font-size:0.8rem;padding:4px 8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);"
-        oninput="saveWorkerUrl()" />
-      <span id="worker-url-status" style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap;"></span>
-    </div>
     <p class="hint" style="margin-top:8px;">
-      <strong>Image Search Worker</strong> — paste your deployed Cloudflare Worker URL above to enable real image search results in the image picker.<br>
       <strong>Local Image</strong> — pick an image file from your device to use as the avatar instead of fetching online.<br>
       <strong>Reset</strong> — clears all rankings and reloads the full default list with fresh avatars.<br>
       <strong>Export JSON</strong> — saves your current rankings to a <code>.json</code> file you can back up or share.<br>
@@ -1626,31 +1619,10 @@ async function handleAdd() {
   render();
 }
 
-/* ── Worker URL setting ── */
-const WORKER_URL_KEY = "vtl_worker_url";
+/* ── Worker URL (hardcoded — image search proxy) ── */
+const WORKER_URL = "https://vtuber-image-search.fleetinginsanity.workers.dev";
 
-function getWorkerUrl() {
-  return localStorage.getItem(WORKER_URL_KEY) || "";
-}
-
-function saveWorkerUrl() {
-  const val = document.getElementById("worker-url-input").value.trim();
-  if (val) {
-    localStorage.setItem(WORKER_URL_KEY, val);
-    document.getElementById("worker-url-status").textContent = "Saved ✓";
-  } else {
-    localStorage.removeItem(WORKER_URL_KEY);
-    document.getElementById("worker-url-status").textContent = "";
-  }
-}
-
-function initWorkerUrlInput() {
-  const saved = getWorkerUrl();
-  if (saved) {
-    document.getElementById("worker-url-input").value = saved;
-    document.getElementById("worker-url-status").textContent = "Saved ✓";
-  }
-}
+function getWorkerUrl() { return WORKER_URL; }
 
 /* ── Image picker ── */
 let _imgPickerResolve = null;
@@ -2928,7 +2900,6 @@ initLists();
 load();
 updateListUI();
 loadVtuberIndex(); // non-blocking; populates vtuberIndex for search/autocomplete
-initWorkerUrlInput();
 const hasData = state.unranked.length > 0 || Object.values(state.tiers).some(a => a.length > 0);
 if (!hasData) {
   const type = activeList().type;
