@@ -1671,7 +1671,8 @@ async function fetchImageCandidates(name, listType) {
       if (res.ok) {
         const data = await res.json();
         for (const img of (data.images || [])) {
-          if (img.img) results.push({ img: img.thumb || img.img, label: img.title || name, source: "Image Search" });
+          // Use full img URL — Bing CDN thumbnails (tse*.mm.bing.net) block third-party hotlinking
+          if (img.img) results.push({ img: img.img, thumb: img.thumb, label: img.title || name, source: "Image Search" });
         }
       }
     } catch(e) {}
@@ -1761,7 +1762,11 @@ function showImagePicker(name) {
         const img = document.createElement("img");
         img.src = c.img;
         img.alt = c.label;
-        img.onerror = () => { cell.remove(); };
+        img.onerror = () => {
+          // If full URL fails, try the Bing thumbnail as fallback before removing
+          if (c.thumb && img.src !== c.thumb) { img.src = c.thumb; }
+          else { cell.remove(); }
+        };
         const lbl = document.createElement("span");
         lbl.textContent = c.label;
         cell.appendChild(img);
