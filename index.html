@@ -1318,14 +1318,26 @@ function save() {
   try { localStorage.setItem(stateKey(activeListId), JSON.stringify(state)); } catch(e) {}
 }
 
+function defaultState() {
+  return {
+    tiers: { S:[], A:[], B:[], C:[], D:[], E:[], F:[] },
+    tierDefs: DEFAULT_TIER_DEFS.map(t => ({...t})),
+    unranked: [],
+  };
+}
+
 function load() {
   try {
     const raw = localStorage.getItem(stateKey(activeListId));
     if (raw) {
       state = JSON.parse(raw);
       if (!state.tierDefs) state.tierDefs = DEFAULT_TIER_DEFS.map(t => ({...t}));
+      if (!state.tiers) state.tiers = { S:[], A:[], B:[], C:[], D:[], E:[], F:[] };
+      if (!state.unranked) state.unranked = [];
+    } else {
+      state = defaultState();
     }
-  } catch(e) {}
+  } catch(e) { state = defaultState(); }
 }
 
 function saveLists() {
@@ -2135,19 +2147,21 @@ async function loadDefaultImages() {
     })
   );
 
+  const unranked = results.map((r, i) =>
+    r.status === "fulfilled" ? r.value : { id: DEFAULTS[i].id, name: DEFAULTS[i].name, img: null }
+  );
+
   if (activeListId !== listId) {
     // User switched away — save quietly to the original list key without touching current state/render
-    const savedState = JSON.parse(localStorage.getItem(stateKey(listId)) || "{}");
-    savedState.unranked = results.map((r, i) =>
-      r.status === "fulfilled" ? r.value : { id: DEFAULTS[i].id, name: DEFAULTS[i].name, img: null }
-    );
-    try { localStorage.setItem(stateKey(listId), JSON.stringify(savedState)); } catch(e) {}
+    try {
+      const savedState = JSON.parse(localStorage.getItem(stateKey(listId)) || "null") || defaultState();
+      savedState.unranked = unranked;
+      localStorage.setItem(stateKey(listId), JSON.stringify(savedState));
+    } catch(e) {}
     return;
   }
 
-  state.unranked = results.map((r, i) =>
-    r.status === "fulfilled" ? r.value : { id: DEFAULTS[i].id, name: DEFAULTS[i].name, img: null }
-  );
+  state.unranked = unranked;
   save();
   render();
 }
@@ -2882,19 +2896,21 @@ async function loadSnackImages() {
     })
   );
 
+  const unranked = results.map((r, i) =>
+    r.status === "fulfilled" ? r.value : { id: SNACK_DEFAULTS[i].id, name: SNACK_DEFAULTS[i].name, img: null }
+  );
+
   if (activeListId !== listId) {
     // User switched away — save quietly to the original list key without touching current state/render
-    const savedState = JSON.parse(localStorage.getItem(stateKey(listId)) || "{}");
-    savedState.unranked = results.map((r, i) =>
-      r.status === "fulfilled" ? r.value : { id: SNACK_DEFAULTS[i].id, name: SNACK_DEFAULTS[i].name, img: null }
-    );
-    try { localStorage.setItem(stateKey(listId), JSON.stringify(savedState)); } catch(e) {}
+    try {
+      const savedState = JSON.parse(localStorage.getItem(stateKey(listId)) || "null") || defaultState();
+      savedState.unranked = unranked;
+      localStorage.setItem(stateKey(listId), JSON.stringify(savedState));
+    } catch(e) {}
     return;
   }
 
-  state.unranked = results.map((r, i) =>
-    r.status === "fulfilled" ? r.value : { id: SNACK_DEFAULTS[i].id, name: SNACK_DEFAULTS[i].name, img: null }
-  );
+  state.unranked = unranked;
   save();
   render();
 }
